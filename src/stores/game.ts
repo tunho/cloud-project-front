@@ -59,17 +59,27 @@ function compareTiles(
   b: Tile,
   sameNumberOrder: SameNumberOrder = "black-first"
 ): number {
-  if (a.isJoker && b.isJoker) return 0;
+  // 조커 처리
+  if (a.isJoker && b.isJoker) return a.id - b.id;
   if (a.isJoker) return 1;
   if (b.isJoker) return -1;
 
-  if (a.value !== b.value) return (a.value as number) - (b.value as number);
-
-  if (sameNumberOrder === "black-first") {
-    return a.color === "black" ? -1 : 1;
-  } else {
-    return a.color === "white" ? -1 : 1;
+  // 숫자 비교
+  if (a.value !== b.value) {
+    return (a.value as number) - (b.value as number);
   }
+
+  // 동일 숫자일 때 색 순서 비교
+  if (a.color !== b.color) {
+    if (sameNumberOrder === "black-first") {
+      return a.color === "black" ? -1 : 1;
+    } else {
+      return a.color === "white" ? -1 : 1;
+    }
+  }
+
+  // 숫자도 같고 색도 같으면 동일
+  return 0;
 }
 
 /* ---------- Pinia Store ---------- */
@@ -148,7 +158,7 @@ export const useGameStore = defineStore("game", {
       this.canPlaceAnywhere = false;
     },
 
-    startTurnFrom(color: Color) {
+    drawCard(color: Color) {
       if (!this.players.length) return null;
       if (this.pendingPlacement) return null;
 
@@ -162,22 +172,29 @@ export const useGameStore = defineStore("game", {
       return t;
     },
 
-    autoInsertIndex(hand: Tile[], tile: Tile): number {
-      if (tile.isJoker) return hand.length;
-      const numericIdx: number[] = [];
-      for (let i = 0; i < hand.length; i++) {
-        if (!hand[i]?.isJoker) numericIdx.push(i);
-      }
-      let k = 0;
-      while (k < numericIdx.length) {
-        const other = hand[numericIdx[k]!];
-        if (compareTiles(tile, other!, this.sameNumberOrder) < 0) break;
-        k++;
-      }
-      if (numericIdx.length === 0) return 0;
-      if (k === numericIdx.length) return numericIdx[numericIdx.length - 1] ?? + 1;
-      return numericIdx[k] ?? 0;
-    },
+autoInsertIndex(hand: Tile[], tile: Tile): number {
+  // 조커를 자동으로 정렬할 일은 없다 → 그냥 맨 뒤
+  if (tile.isJoker) {
+    return hand.length;
+  }
+
+  // 조커는 건너뛰고, 숫자 카드들만 기준으로 정렬 위치 계산
+  for (let i = 0; i < hand.length; i++) {
+    const h = hand[i];
+
+    // 조커는 고정: 비교 대상에서 제외
+    if (h!.isJoker) continue;
+
+    // 내가 더 작다면, 여기 앞에 끼워 넣는다
+    if (compareTiles(tile, h!, this.sameNumberOrder) < 0) {
+      return i;
+    }
+  }
+
+  // 모든 숫자 카드보다 크면 → 맨 뒤에
+  return hand.length;
+}
+,
 
     autoPlaceDrawnTile() {
       const p = this.currentPlayer;
@@ -209,8 +226,110 @@ export const useGameStore = defineStore("game", {
     },
 
     nextTurn() {
-      if (this.pendingPlacement) return;
-      this.currentTurn = (this.currentTurn + 1) % this.numPlayers;
+      this.pendingPlacement = false;
+      this.drawnTile = null;
+      this.canPlaceAnywhere = false;
+
+      // 원래 nextTurn 로직
+      this.currentTurn = (this.currentTurn + 1) % this.players.length;
     },
+
+    // 카드 예측
+    guessTile(
+      targetPlayerId: number,
+      index: number,
+      value: number | string | null
+    ) {
+      const me = this.currentPlayer;
+      const target = this.players.find((p) => p.id === targetPlayerId);
+
+      if (!me || !target) {
+        return { ok: false, reason: "invalid-player" };
+      }
+
+      const tile = target.hand[index];
+
+      if (!tile) {
+        return { ok: false, reason: "invalid-index" };
+      }
+
+
+      const correct = tile.value === value;
+
+if (correct) {
+  tile.revealed = true;
+} else {
+  // ❗ 오답일 때만 내 숨겨진 카드 공개
+  this.myHiddenOpen();
+}
+
+if (this.isPlayerEliminated(target)) {
+  this.handlePlayerElimination(target.id);
+}
+
+if (this.isPlayerEliminated(me)) {
+  this.handlePlayerElimination(me.id);
+}
+
+this.nextTurn();
+
+return { ok: true, correct };
+},
+
+// 틀렸을 때 내 카드 공개
+      myHiddenOpen() {
+        const me = this.currentPlayer;
+        if (!me) return;
+
+        // 아직 공개되지 않은(hidden) 카드들
+        const hidden = me.hand.filter(t => !t.revealed);
+
+        // 숨겨진 카드가 없다면 아무 것도 할 수 없음
+        if (!hidden.length) return;
+
+        // 규칙 1: 가장 앞(hidden[0])을 공개
+        const tile = hidden[Math.floor(Math.random() * hidden.length)];
+        tile!.revealed = true;
+      },
+
+      //탈락 여부 확인
+    isPlayerEliminated(player: Player): boolean {
+      return player.hand.every(t => t.revealed);
+    },
+    
+    // 탈락 시키기
+  handlePlayerElimination(playerId: number) {
+  // 예: 플레이어 제거
+  this.players = this.players.filter(p => p.id !== playerId);
+
+  // 현재 턴이 사라진 플레이어면 턴 조정
+  if (this.currentTurn >= this.players.length) {
+    this.currentTurn = 0;
+  }
+
+  // 플레이어 수 줄이기
+  this.numPlayers = this.players.length;
+
+  // 게임 종료 판정도 가능:
+  if (this.players.length === 1) {
+    alert(`Game Over! Winner is ${this.players[0]!.name}`);
+  }
+},
+
+
+placeJokerTile(playerId: number, index: number) {
+  const player = this.players.find(p => p.id === playerId);
+  if (!player || !this.drawnTile) return;
+
+  // 조커 INSERT
+  player.hand.splice(index, 0, this.drawnTile);
+
+  this.drawnTile = null; // 조커 소비됨
+}
+
+    
+
+
+
   },
 });

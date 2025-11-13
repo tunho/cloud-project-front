@@ -1,18 +1,20 @@
-import { createRouter, createWebHistory, type RouteRecordRaw } from "vue-router";
-import App from "../App.vue"; // 다빈치 코드 메인 화면
+import { createRouter, createWebHistory } from "vue-router";
+import GameBoard from "../views/GameBoard.vue";
 
-// 라우트 타입 명시 (선택이지만 권장)
-const routes: RouteRecordRaw[] = [
+const routes = [
   {
     path: "/",
-    name: "game",
-    component: App,
+    redirect: "/game"
   },
+  {
+    path: "/game",
+    name: "GameBoard",
+    component: GameBoard
+  }
 ];
 
-// Router 인스턴스 생성
 const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
+  history: createWebHistory(),
   routes,
 });
 
