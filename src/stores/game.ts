@@ -15,6 +15,7 @@ export interface Tile {
 export interface Player {
   id: number;
   name: string;
+  sid: string;
   hand: Tile[];
   lastDrawnIndex: number | null;
 }
@@ -117,6 +118,7 @@ export const useGameStore = defineStore("game", {
         id: i,
         name: `Player ${i + 1}`,
         hand: [],
+        sid :"a",
         lastDrawnIndex: null,
       }));
     },
