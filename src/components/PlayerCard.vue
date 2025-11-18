@@ -1,82 +1,137 @@
 <template>
-  <div class="player-card" :class="{ active }">
-    <div class="player-name">
-      {{ player.name }}
-      <span v-if="isMe"> (나)</span>
-      <span v-if="active"> ← 턴</span>
-    </div>
-
-    <div class="hand">
+  <div class="player-card">
+    <div class="hand" :class="handClass">
       <div
-        v-for="(t, i) in player.hand"
+        v-for="t in player.hand"
         :key="t.id"
         class="tile"
-        :style="tileStyle(t)"
+        :class="{
+          revealed: t.revealed || isMe,
+          black: t.color === 'black',
+          white: t.color === 'white'
+        }"
+        :style="tileRotate"
       >
-        <span v-if="t.isJoker">★</span>
-        <span v-else>{{ t.color[0].toUpperCase() + t.value }}</span>
+        <div class="tile-content" :class="contentClass">
+          <!-- 내 카드 -->
+          <template v-if="isMe">
+            <span v-if="t.isJoker" class="joker">★</span>
+            <span v-else class="number">{{ t.value }}</span>
+          </template>
+
+          <!-- 상대 카드 -->
+          <template v-else>
+            <span v-if="t.revealed">
+              <span v-if="t.isJoker" class="joker">★</span>
+              <span v-else class="number">{{ t.value }}</span>
+            </span>
+            <span v-else class="hidden">?</span>
+          </template>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-defineProps<{
-  player: any,
-  active: boolean,
-  isMe: boolean
+import { computed } from "vue";
+
+const props = defineProps<{
+  player: any;
+  isMe: boolean;
+  active: boolean;
+  side: "left" | "right";
 }>();
 
-import type { CSSProperties } from "vue";
+/* 좌/우 손패 기울기 */
+const handClass = computed(() => ({
+  leftTilt: props.side === "left",
+  rightTilt: props.side === "right",
+}));
 
-function tileStyle(t: any): CSSProperties {
-  const isBlack = t.color === "black";
-  return {
-    width: "28px",
-    height: "38px",
-    border: "1px solid #999",
-    borderRadius: "6px",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: "12px",
-    fontWeight: "700",
-    background: isBlack ? "#222" : "#fff",
-    color: isBlack ? "#fff" : "#000",
-  };
-}
+/* 숫자/별을 다시 반대 방향으로 보정 */
+const contentClass = computed(() => ({
+  contentLeft: props.side === "left",
+  contentRight: props.side === "right",
+}));
+
+/* 개별 카드 미세 기울기 */
+const tileRotate = computed(() => ({
+  transform: props.side === "left" ? "rotate(-10deg)" : "rotate(10deg)",
+}));
 </script>
 
 <style scoped>
-.player-card {
-  background: #fafafa;
-  border: 1px solid #ccc;
-  padding: 10px;
-  border-radius: 10px;
-  width: 160px;
-}
-
-.player-card.active {
-  background: #eaf5ff;
-  border-color: #4a90e2;
-}
-
-.player-name {
-  font-weight: 700;
-  margin-bottom: 6px;
-  text-align: center;
-}
-
+/* 전체 카드 묶음 */
 .hand {
   display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-  justify-content: center;
+  gap: 14px;
 }
 
+.leftTilt {
+  transform: rotate(-35deg);
+}
+
+.rightTilt {
+  transform: rotate(35deg);
+}
+
+/* 🎮 실물 타일 스타일 */
 .tile {
+  width: 70px;
+  height: 95px;
+  border-radius: 12px;
+  border: 3px solid #444;
+  box-shadow: 0px 4px 8px rgba(0,0,0,0.35);
   display: flex;
-  justify-content: center;
   align-items: center;
+  justify-content: center;
+
+  transition: transform 0.2s;
+  background: #fff;
+}
+
+/* 색상별 배경 */
+.tile.black {
+  background: #111;
+  border-color: #000;
+  color: #fff;
+}
+
+.tile.white {
+  background: #fff;
+  border-color: #ccc;
+  color: #000;
+}
+
+/* 텍스트 올바르게 보정 */
+.contentLeft {
+  transform: rotate(35deg);
+}
+
+.contentRight {
+  transform: rotate(-35deg);
+}
+
+.number {
+  font-size: 36px;
+  font-weight: 900;
+}
+
+.hidden {
+  font-size: 40px;
+  color: #888;
+}
+
+.joker {
+  font-size: 40px;
+  color: gold;
+  font-weight: 900;
+  text-shadow: 0px 0px 6px rgba(255,215,0,0.7);
+}
+
+/* 자기 턴인 플레이어 강조 효과 */
+.player-card.active .tile {
+  box-shadow: 0px 0px 18px rgba(80,150,255,0.7);
 }
 </style>
