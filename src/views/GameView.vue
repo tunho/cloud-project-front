@@ -1,93 +1,51 @@
 <template>
   <div class="game-container">
     
-    <template v-for="p in players" :key="'top-' + p.sid">
-      <div v-if="seatMap[p.sid] === 'top'">
-        <div class="top-player">
-          <PlayerCard
-            :player="p"
-            :isMe="false"
-            :active="p.id === currentTurn"
-            :phase="phase"
-            side="top"
-            :isMyTurn="isMyTurn"
-            :selectedTarget="selectedTarget"
-            @select-tile="handleTileSelected"
-          />
+<template v-for="side in sideList" :key="side">
+      <template v-for="p in players" :key="side + '-' + p.sid">
+        <div v-if="seatMap[p.sid] === side" :class="side + (side === 'top' ? '-player' : '-zone')">
+          <div :class="side === 'top' ? '' : side + '-hand'">
+            <PlayerCard
+              :player="p"
+              :isMe="false"
+              :active="p.id === currentTurn"
+              :phase="phase"
+              :side="side"  :isMyTurn="isMyTurn"
+              :selectedTarget="selectedTarget"
+              @select-tile="handleTileSelected"
+            />
+          </div>
         </div>
-      </div>
+      </template>
     </template>
-
-    <template v-for="p in players" :key="'left-' + p.sid">
-      <div v-if="seatMap[p.sid] === 'left'" class="left-zone">
-        <div class="left-hand">
-          <PlayerCard
-            :player="p"
-            :isMe="false"
-            :active="p.id === currentTurn"
-            :phase="phase"
-            side="left"
-            :isMyTurn="isMyTurn"
-            :selectedTarget="selectedTarget"
-            @select-tile="handleTileSelected"
-          />
-        </div>
-      </div>
-    </template>
-
-    <template v-for="p in players" :key="'right-' + p.sid">
-      <div v-if="seatMap[p.sid] === 'right'" class="right-zone">
-        <div class="right-hand">
-          <PlayerCard
-            :player="p"
-            :isMe="false"
-            :active="p.id === currentTurn"
-            :phase="phase"
-            side="right"
-            :isMyTurn="isMyTurn"
-            :selectedTarget="selectedTarget"
-            @select-tile="handleTileSelected"
-          />
-        </div>
-      </div>
-    </template>
-
     <div class="center-area">
+      
+      <GuessInputWheel
+        v-if="isGuessingUIOpen && !isWaitingForResult"
+        @cancel="cancelSelection"
+        @select-value="selectGuessValue"
+      />
 
-      <div v-if="isGuessingUIOpen" class="guess-overlay" @click="cancelSelection">
-        <div class="guess-wheel" @click.stop>
-          
-          <div class="center-cancel-button" @click="cancelSelection">
-            X
-          </div>
-          
-          <div v-for="i in 13" 
-            class="guess-option" 
-            :key="i"
-            :style="{ '--i': i }"
-            @click="selectGuessValue(i === 13 ? 'joker' : i - 1)"
-          >
-            {{ i === 13 ? '★' : i - 1 }}
-          </div>
+      <GameNotification
+        :isWaitingForResult="isWaitingForResult"
+        :showResultModal="showResultModal"
+        :guessResult="guessResult"
+      />
 
-        </div>
-      </div>
+      <GameDrawUI
+        v-if="isMyTurn && phase === 'DRAWING' && !showResultModal"
+        @pick-color="pickColor"
+      />
 
-      <div v-if="isMyTurn && phase === 'DRAWING'" class="draw-select">
-        <div class="big-card black" @click="pickColor('black')">
-          <div class="label">검은 타일</div>
-        </div>
-        <div class="big-card white" @click="pickColor('white')">
-          <div class="label black-text">흰색 타일</div>
-        </div>
-      </div>
+      <GameTimer
+        v-else-if="!isGuessingUIOpen && !isWaitingForResult && !showResultModal"
+        :circleStyle="circleStyle"
+        :currentPlayerName="orderedPlayers[currentTurn]?.name"
+        :isMyTurn="isMyTurn"
+      />
 
-      <div v-else-if="!isGuessingUIOpen" class="turn-circle" :style="circleStyle">
-        <div class="player-text">
-          {{ orderedPlayers[currentTurn]?.name }} 턴
-          <span v-if="orderedPlayers[currentTurn]?.sid === mySid">(나)</span>
-        </div>
-      </div>
+      <!-- 🔥 [삭제] 중앙 덱 (사용자 요청으로 제거, 애니메이션은 화면 중앙 좌표 사용) -->
+
       
     </div>
 
@@ -106,199 +64,435 @@
       </div>
     </div>
 
+    <GuessAnimationOverlay
+      :isVisible="isAnimating"
+      :targetRect="animTargetRect"
+      :isCorrect="animIsCorrect"
+      :guessedValue="animGuessedValue"
+      @animation-complete="handleAnimationComplete"
+    />
+
+    <ContinueGuessOverlay
+      :isVisible="showContinueOverlay"
+      :timer="continueTimer"
+      @continue="handleContinueGuess"
+      @pass="handlePassTurn"
+    />
+
+    <JokerPlacementOverlay
+      v-if="phase === 'PLACE_JOKER' && isMyTurn && me"
+      :hand="me.hand"
+      :drawnTile="drawnTile"
+      @place-joker="handlePlaceJoker"
+    />
+
+    <FlyingCardOverlay
+      :isVisible="isFlying"
+      :startRect="flyStartRect"
+      :endRect="flyEndRect"
+      :color="flyColor"
+      @animation-complete="handleFlyComplete"
+    />
+
   </div>
 </template>
 
 <script setup lang="ts">
-import {
-  ref,
-  computed,
-  onMounted,
-  onUnmounted,
-} from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { socket } from "../socket";
+
+// 컴포넌트 Import
 import PlayerCard from "../components/PlayerCard.vue";
+import GuessInputWheel from "../components/game/GuessInputWheel.vue";
+import GameNotification from "../components/game/GameNotification.vue";
+import GameDrawUI from "../components/game/GameDrawUI.vue";
+import GameTimer from "../components/game/GameTimer.vue";
+import GuessAnimationOverlay from "../components/game/GuessAnimationOverlay.vue";
+import ContinueGuessOverlay from "../components/game/ContinueGuessOverlay.vue";
+import JokerPlacementOverlay from "../components/game/JokerPlacementOverlay.vue";
+import FlyingCardOverlay from "../components/game/FlyingCardOverlay.vue"; // 🔥 [추가]
+
 
 const route = useRoute();
 const router = useRouter();
 const roomId = route.params.roomId as string;
 const maxTime = ref(20);
 
+const isAnimating = ref(false);
+const animIsCorrect = ref(false);
+const animGuessedValue = ref<number | string | null>(null); // 🔥 [추가]
+const animTargetRect = ref<{ top: number; left: number; width: number; height: number } | null>(null);
+const currentAnimData = ref<any>(null); // 나중에 서버로 보낼 데이터 저장용
+
+const showContinueOverlay = ref(false);
+const continueTimer = ref(0);
+
+// 🔥 [추가] 카드 날리기 애니메이션 상태
+const isFlying = ref(false);
+const flyStartRect = ref<{ top: number; left: number; width: number; height: number } | null>(null);
+const flyEndRect = ref<{ top: number; left: number; width: number; height: number } | null>(null);
+const flyColor = ref<"black" | "white">("black");
+
+// ... (기존 상태값 및 로직 그대로 복사) ...
+// players, currentTurn, piles, drawnTile, phase, timeLeft, mySid, selectedTarget
+// isWaitingForResult, showResultModal, guessResult, currentGuessInfo
+// orderedPlayers, me, isMyTurn, isGuessingUIOpen, circleStyle
+// startLocalTimer, pickColor, handleStateUpdate, handleTurnPhaseStart
+// handleGuessResult, handleGuessAttempt, seatMap
+// handleTileSelected, cancelSelection, selectGuessValue, sendGuess
+
 // -----------------------------
-// 상태값
+// 상태값 (요약)
 // -----------------------------
 const players = ref<any[]>([]);
 const currentTurn = ref(0);
-const piles = ref({ black: 0, white: 0 });
-const drawnTile = ref(null);
 const phase = ref("INIT");
+const piles = ref({ black: 0, white: 0 }); // 🔥 [추가]
 const timeLeft = ref(0);
 let timerInterval: number | null = null;
 const mySid = ref<string | null>(null);
+const drawnTile = ref<any>(null);
 
-// 🔥 추리 타겟 상태
+// 추리 타겟 상태
 const selectedTarget = ref<{ targetId: number; index: number } | null>(null);
 
+// UI 상태
+const isWaitingForResult = ref(false);
+const showResultModal = ref(false);
+const guessResult = ref<{ correct: boolean; value: number } | null>(null);
+const currentGuessInfo = ref<{
+    guesserName: string; targetName: string; targetTileIndex: number; guessValue: number | string; 
+} | null>(null); 
+
 // -----------------------------
-// 계산 속성
+// 계산 속성 (요약)
 // -----------------------------
-const orderedPlayers = computed(() =>
-  [...players.value].sort((a, b) => a.id - b.id)
-);
-
-const me = computed(() =>
-  players.value.find((p) => p.sid === mySid.value) || null
-);
-
-const isMyTurn = computed(() => {
-  if (!me.value) return false;
-  return me.value.id === currentTurn.value;
-});
-
-const isGuessingUIOpen = computed(() => {
-    return !!selectedTarget.value; // selectedTarget이 null이 아닐 때 UI 표시
-});
-
-// 원형 타이머 스타일
+const orderedPlayers = computed(() => [...players.value].sort((a, b) => a.id - b.id));
+const me = computed(() => players.value.find((p) => p.sid === mySid.value) || null);
+const isMyTurn = computed(() => me.value && me.value.id === currentTurn.value);
+const isGuessingUIOpen = computed(() => !!selectedTarget.value);
 const circleStyle = computed(() => {
   const percent = 1 - timeLeft.value / maxTime.value;
-  const deg = percent * 360;
-  return { "--timer-angle": `${deg}deg` };
+  return { "--timer-angle": `${percent * 360}deg` };
 });
 
 // -----------------------------
-// 타이머
+// 로직 함수 (이전 코드와 동일)
 // -----------------------------
 function startLocalTimer(sec: number) {
   timeLeft.value = sec;
   if (timerInterval) clearInterval(timerInterval);
-
   timerInterval = window.setInterval(() => {
     timeLeft.value -= 1;
-    if (timeLeft.value <= 0) {
-      clearInterval(timerInterval!);
-      timerInterval = null;
-    }
+    if (timeLeft.value <= 0) clearInterval(timerInterval!);
   }, 1000);
 }
 
-// -----------------------------
-// DRAWING 단계: 색상 선택
-// -----------------------------
-function pickColor(color: "black" | "white") {
+function pickColor(payload: { color: "black" | "white", event: MouseEvent } | "black" | "white") {
   if (!isMyTurn.value) return;
+  
+  let color: "black" | "white" = "black";
+  
+  // 이벤트 객체가 있는 경우 (GameDrawUI에서 호출)
+  if (typeof payload === "object" && "color" in payload) {
+    color = payload.color;
+    const target = payload.event.currentTarget as HTMLElement;
+    if (target) {
+      const rect = target.getBoundingClientRect();
+      flyStartRect.value = {
+        top: rect.top,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height
+      };
+      flyColor.value = color;
+    }
+  } else {
+    // 하위 호환성 (혹시 모를 직접 호출)
+    color = payload as "black" | "white";
+  }
+
   socket.emit("draw_tile", { roomId, color });
 }
 
-// -----------------------------
-// 소켓 이벤트 핸들러
-// -----------------------------
 function handleStateUpdate(data: any) {
+  // 1. 이전 핸드 상태 저장 (플레이어 ID별 핸드 길이)
+  const oldHandLengths = new Map<number, number>();
+  players.value.forEach(p => oldHandLengths.set(p.id, p.hand.length));
+
+  // 2. 상태 업데이트
   players.value = data.players || [];
-  piles.value = data.piles || { black: 0, white: 0 };
-  drawnTile.value = data.drawnTile ?? null;
   currentTurn.value = data.currentTurn ?? 0;
   if (data.phase) phase.value = data.phase;
-  console.log("STATE_UPDATE:", JSON.stringify(data.players, null, 2));
+  drawnTile.value = data.drawnTile || null;
+  piles.value = data.piles || { black: 0, white: 0 }; // 🔥 [추가]
+
+  // 3. 변경 감지 및 애니메이션 트리거
+  players.value.forEach(p => {
+    const oldLen = oldHandLengths.get(p.id) || 0;
+    if (p.hand.length > oldLen) {
+      // 카드가 추가됨 -> 애니메이션 대상!
+      const newCardIndex = p.lastDrawnIndex ?? (p.hand.length - 1);
+      const newCard = p.hand[newCardIndex]; 
+      
+      // 내 턴이고 이미 pickColor에서 시작 위치를 잡았다면 덮어쓰지 않음
+      if (p.sid === mySid.value && flyStartRect.value) {
+        // pass (keep existing flyStartRect)
+      } else {
+        // 소스 덱 찾기 (없으면 화면 중앙)
+        const sourceId = newCard.color === 'black' ? 'deck-black' : 'deck-white';
+        const sourceEl = document.getElementById(sourceId);
+        
+        if (sourceEl) {
+          const sRect = sourceEl.getBoundingClientRect();
+          flyStartRect.value = {
+            top: sRect.top, left: sRect.left, width: sRect.width, height: sRect.height
+          };
+        } else {
+          // 덱 엘리먼트가 없으면 화면 중앙에서 시작
+          const w = 50; const h = 75;
+          flyStartRect.value = {
+            top: window.innerHeight / 2 - h / 2,
+            left: window.innerWidth / 2 - w / 2,
+            width: w, height: h
+          };
+        }
+        flyColor.value = newCard.color;
+      }
+
+      // 타겟 카드 찾기 (DOM 업데이트 대기)
+      setTimeout(() => {
+        let visualIndex = newCardIndex;
+        if (seatMap.value[p.sid] === 'top') {
+          visualIndex = p.hand.length - 1 - newCardIndex;
+        }
+
+        const targetId = `player-${p.id}-tile-${visualIndex}`;
+        const targetEl = document.getElementById(targetId);
+
+        if (targetEl) {
+          const tRect = targetEl.getBoundingClientRect();
+          flyEndRect.value = {
+            top: tRect.top, left: tRect.left, width: tRect.width, height: tRect.height
+          };
+          isFlying.value = true;
+          
+          // 잠시 숨기기
+          targetEl.style.opacity = "0";
+        }
+      }, 100);
+    }
+  });
+}
+
+function handleFlyComplete() {
+  isFlying.value = false;
+  flyStartRect.value = null;
+  flyEndRect.value = null;
+  
+  // 모든 플레이어의 숨겨진 카드 복구 (단순화: 모든 타일 opacity 1로 강제하거나, 특정 타일만 복구)
+  // 여기서는 전체 복구보다는, 방금 애니메이션 된 타일을 찾아야 하는데...
+  // 간단히 class로 제어하거나, 다시 DOM 탐색. 
+  // 가장 쉬운 방법: 모든 .tile의 opacity를 1로 리셋하는 CSS class를 toggle하거나,
+  // handleStateUpdate에서 저장해둔 타겟 ID를 ref로 저장해두고 복구.
+  
+  // 여기서는 간단히: "모든 타일은 기본적으로 opacity 1"이므로, 
+  // 인라인 스타일을 제거해주면 됨.
+  const tiles = document.querySelectorAll('.tile');
+  tiles.forEach((el) => (el as HTMLElement).style.opacity = '');
 }
 
 function handleTurnPhaseStart(data: any) {
   phase.value = data.phase;
   maxTime.value = data.timer || 20;
   startLocalTimer(maxTime.value);
-  
-  // 턴이 바뀌면 선택 상태 초기화
   cancelSelection();
+  showResultModal.value = false;
+  currentGuessInfo.value = null;
 }
 
+function handleGuessResult(data: any) {
+  isWaitingForResult.value = false;
+  guessResult.value = { correct: data.correct, value: data.value };
+  showResultModal.value = true;
+  setTimeout(() => {
+    showResultModal.value = false;
+    guessResult.value = null;
+    currentGuessInfo.value = null;
+  }, 2500);
+}
+
+function handleGuessAttempt(data: any) {
+  // 🔥 [수정] 알림 UI 제거로 인해 로직 삭제
+  if (data.guesserId === me.value?.id) return;
+  // const guesserPlayer = orderedPlayers.value.find(p => p.id === data.guesserId);
+  // const targetPlayer = orderedPlayers.value.find(p => p.id === data.targetId);
+  // currentGuessInfo.value = { ... };
+}
+
+type Side = "top" | "left" | "right" | "bottom";
+
+// 2️⃣ 반복문용 배열을 'as const'로 정의 (타입 고정)
+const sideList = ["top", "left", "right"] as const;
+
+// ... (기존 코드) ...
+
+// 3️⃣ seatMap의 반환 타입도 명시적으로 변경 (권장)
 const seatMap = computed(() => {
   if (!me.value || players.value.length === 0) return {};
   const others = players.value.filter(p => p.sid !== mySid.value);
   const count = others.length;
-  const seats: Record<string, string> = {}; 
-  seats[me.value.sid] = "bottom";
-
-  if (count === 1) {
-    seats[others[0].sid] = "top";
-  } else if (count === 2) {
-    seats[others[0].sid] = "left";
-    seats[others[1].sid] = "right";
-  } else if (count === 3) {
-    seats[others[0].sid] = "top";
-    seats[others[1].sid] = "left";
-    seats[others[2].sid] = "right";
-  }
+  
+  // Record<string, string> -> Record<string, Side> 로 변경
+  const seats: Record<string, Side> = { [me.value.sid]: "bottom" };
+  
+  if (count === 1) { seats[others[0].sid] = "top"; }
+  else if (count === 2) { seats[others[0].sid] = "left"; seats[others[1].sid] = "right"; }
+  else if (count === 3) { seats[others[0].sid] = "top"; seats[others[1].sid] = "left"; seats[others[2].sid] = "right"; }
   return seats;
 });
 
-// -----------------------------
-// 예측 (Guessing) 로직
-// -----------------------------
-
-// 1. PlayerCard에서 타일 클릭 시 호출됨
 function handleTileSelected(data: { targetId: number; index: number }) {
-  // 내 턴이고 추리 페이즈일 때만 선택 가능
-  if (!isMyTurn.value || phase.value !== 'GUESSING') return;
-
+  if (!isMyTurn.value || (phase.value !== 'GUESSING' && phase.value !== 'POST_SUCCESS_GUESS')) return;
   selectedTarget.value = data;
 }
 
-// 2. 오버레이 닫기 / 선택 취소
-function cancelSelection() {
-  selectedTarget.value = null;
-}
+function cancelSelection() { selectedTarget.value = null; }
 
-// 3. 원형 휠에서 숫자 선택 시 호출됨
 function selectGuessValue(value: number | 'joker') {
   if (!selectedTarget.value) return;
-
-  // 조커는 12로 처리 (서버 로직에 맞춤)
   const guessValue = (value === 'joker') ? 12 : value; 
-
+  const targetPlayer = orderedPlayers.value.find(p => p.id === selectedTarget.value!.targetId);
+  currentGuessInfo.value = {
+    guesserName: me.value!.name,
+    targetName: targetPlayer?.name || '대상',
+    targetTileIndex: selectedTarget.value!.index,
+    guessValue: (value === 'joker') ? '★' : value, 
+  };
   sendGuess(guessValue); 
-  selectedTarget.value = null; // UI 닫기
+  selectedTarget.value = null; 
 }
 
-// 4. 서버로 추리 요청 전송
 function sendGuess(value: number | 'joker') {
   if (!selectedTarget.value) return;
-
+  isWaitingForResult.value = true;
   socket.emit("guess_value", {
-    roomId: roomId,
+    roomId,
     targetId: selectedTarget.value.targetId,
     index: selectedTarget.value.index,
     value: value,
   });
 }
 
-// -----------------------------
-// 라이프사이클
-// -----------------------------
+function handlePlaceJoker(index: number) {
+  if (phase.value !== 'PLACE_JOKER') return;
+  socket.emit("place_joker", {
+    roomId,
+    index
+  });
+}
+
+function handleStartGuessAnimation(data: any) {
+  // data: { guesser_id, target_id, index, value, correct }
+  
+  // 🔥 [수정] 애니메이션 시작 시 대기 상태 해제 (로딩 UI 제거)
+  isWaitingForResult.value = false;
+
+  // 1. 타겟 카드의 DOM 요소 찾기 (PlayerCard에서 ID를 설정해뒀으므로 찾을 수 있음)
+  // 🔥 [수정] Top 포지션은 카드가 역순으로 렌더링되므로, 인덱스를 변환해야 함
+  let visualIndex = data.index;
+  const targetPlayer = players.value.find(p => p.id === data.target_id);
+  
+  if (targetPlayer && seatMap.value[targetPlayer.sid] === 'top') {
+    visualIndex = targetPlayer.hand.length - 1 - data.index;
+  }
+
+  const elementId = `player-${data.target_id}-tile-${visualIndex}`;
+  const el = document.getElementById(elementId);
+
+  if (el) {
+    const rect = el.getBoundingClientRect();
+    animTargetRect.value = {
+      top: rect.top,
+      left: rect.left,
+      width: rect.width,
+      height: rect.height
+    };
+  }
+
+  // 2. 애니메이션 데이터 설정
+  animIsCorrect.value = data.correct;
+  animGuessedValue.value = data.value; // 🔥 [추가]
+  currentAnimData.value = { 
+    roomId: roomId, // route에서 가져온 값
+    guesserUid: data.guesser_id, // (주의: 서버가 보내주는 데이터에 맞춰 수정 필요, uid가 아니라 id일수도 있음)
+    correct: data.correct
+  };
+
+  // 3. 오버레이 활성화 -> 타이머 등 다른 UI 가려짐
+  isAnimating.value = true;
+}
+
+// ② 오버레이가 "애니메이션 끝났어"라고 알려옴
+function handleAnimationComplete() {
+  isAnimating.value = false;
+  animTargetRect.value = null;
+
+  // 4. 서버에 "완료" 신호 전송
+  if (currentAnimData.value) {
+    // 서버 game_events.py의 on_animation_done가 받을 데이터 형식 확인
+    socket.emit("game:animation_done", {
+      roomId: roomId,
+      guesserUid: players.value.find(p => p.id === currentAnimData.value.guesserUid)?.uid, // ID -> UID 변환 필요 시
+      correct: currentAnimData.value.correct
+    });
+  }
+}
+
+// --- 4. 연속 추리 (Continue Guessing) ---
+function handlePromptContinue(data: any) {
+  console.log("연속 추리 기회!", data);
+  // 기존 타이머 재시작 로직은 유지하되, 오버레이를 띄움
+  startLocalTimer(data.timer || 60);
+  
+  continueTimer.value = data.timer || 60; 
+  showContinueOverlay.value = true;
+}
+
+function handleContinueGuess() {
+  showContinueOverlay.value = false; 
+  // 아무것도 안 해도 됨 (이미 GUESSING/POST_SUCCESS_GUESS 상태임)
+  // 다만 UX적으로 "추리를 계속하세요" 같은 토스트를 띄워줄 수도 있음
+}
+
+function handlePassTurn() {
+  showContinueOverlay.value = false; 
+  socket.emit("stop_guessing", { roomId: roomId });
+}
+
+
 onMounted(() => {
   mySid.value = socket.id ?? null;
   socket.on("state_update", handleStateUpdate);
   socket.on("game:turn_phase_start", handleTurnPhaseStart);
-  socket.on("game_over", (d) => {
-    alert(`게임 종료! 승자: ${d.winner.name}`);
-    router.push("/davinci-home");
-  });
+  socket.on("game:guess_result", handleGuessResult);
+  socket.on("game:guess_attempt", handleGuessAttempt);
+  socket.on("game_over", (d) => { alert(`게임 종료! 승자: ${d.winner.name}`); router.push("/davinci-home"); });
+  socket.on("game:start_guess_animation", handleStartGuessAnimation);
+  socket.on("game:prompt_continue", handlePromptContinue); // 🔥 [추가]
 });
 
 onUnmounted(() => {
-  socket.off("state_update", handleStateUpdate);
-  socket.off("game:turn_phase_start", handleTurnPhaseStart);
+  socket.off("state_update"); socket.off("game:turn_phase_start");
+  socket.off("game:guess_result"); socket.off("game:guess_attempt");
   if (timerInterval) clearInterval(timerInterval);
+  socket.off("game:start_guess_animation");
+  socket.off("game:prompt_continue"); // 🔥 [추가]
 });
 </script>
 
 <style scoped>
-:root {
-  --card-gap: 16px;
-  --card-width: 70px;
-  --card-height: 95px;
-}
-
 .game-container {
   display: grid;
   grid-template-columns: 1fr 2fr 1fr;
@@ -306,46 +500,56 @@ onUnmounted(() => {
   height: 100vh;
   width: 100vw;
   position: relative;
+  background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+  overflow: hidden;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
-/* ----------------------------------
-   플레이어 위치 스타일
----------------------------------- */
 .top-player {
   position: absolute;
-  top: 40px;
+  top: 20px;
   left: 50%;
   transform: translateX(-50%);
-  /* 🔥 Top 플레이어 화살표 잘림 방지 */
-  padding-bottom: 130px; 
+  padding-bottom: 40px;
+  z-index: 10;
 }
 
 .my-hand {
   position: absolute;
-  bottom: 40px;
+  bottom: 30px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   justify-content: center;
   align-items: center;
   gap: 18px;
-  padding: 10px 0;
-  pointer-events: none; 
+  padding: 20px 40px;
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 30px;
+  backdrop-filter: blur(5px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  z-index: 20;
 }
-.my-hand .tile { pointer-events: auto; }
+
+.my-hand .tile {
+  pointer-events: auto;
+}
 
 .left-hand {
   position: absolute;
-  left: 40px;
+  left: 30px;
   top: 50%;
   transform: translateY(-50%);
+  z-index: 10;
 }
 
 .right-hand {
   position: absolute;
-  right: 40px;
+  right: 30px;
   top: 50%;
   transform: translateY(-50%);
+  z-index: 10;
 }
 
 .center-area {
@@ -353,83 +557,85 @@ onUnmounted(() => {
   display: flex;
   justify-content: center;
   align-items: center;
-}
-
-/* ----------------------------------
-   드로우 UI
----------------------------------- */
-.draw-select { display: flex; gap: 40px; }
-.big-card {
-  width: 180px; height: 260px;
-  border-radius: 14px; border: 3px solid #444;
-  display: flex; justify-content: center; align-items: center;
-  font-size: 26px; font-weight: 800; cursor: pointer;
-  box-shadow: 0 6px 16px rgba(0,0,0,0.25);
-  transition: transform 0.15s, box-shadow 0.15s;
-}
-.big-card:hover { transform: translateY(-8px); box-shadow: 0 12px 26px rgba(0,0,0,0.35); }
-.big-card.black { background: #111; color: white; }
-.big-card.white { background: #fafafa; color: #333; }
-.black-text { color: #111; }
-
-/* ----------------------------------
-   턴 타이머
----------------------------------- */
-.turn-circle {
-  width: 240px; height: 240px;
-  border-radius: 50%;
-  background: conic-gradient(#4caf50 var(--timer-angle), #ddd 0deg);
-  display: flex; justify-content: center; align-items: center;
-  transition: background 0.3s linear;
-}
-.player-text { font-size: 28px; font-weight: 800; color: #222; text-align: center; }
-
-/* ----------------------------------
-   추리 오버레이 (원형 UI)
----------------------------------- */
-.guess-overlay {
-  position: absolute;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex; justify-content: center; align-items: center;
-  z-index: 100;
-}
-
-.guess-wheel {
-  width: 300px; height: 300px;
   position: relative;
-  display: flex; justify-content: center; align-items: center;
 }
 
-.center-cancel-button {
-  width: 80px; height: 80px;
-  border-radius: 50%;
-  background: #f44336; color: white;
-  display: flex; justify-content: center; align-items: center;
-  font-size: 30px; font-weight: bold; cursor: pointer;
-  z-index: 102;
-}
-
-.guess-option {
-  --radius: 140px;
-  --count: 13;
-  
+/* Table Glow Effect */
+.center-area::before {
+  content: '';
   position: absolute;
-  width: 50px; height: 50px;
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(66, 133, 244, 0.1) 0%, transparent 70%);
   border-radius: 50%;
-  background: #fff; border: 2px solid #555;
-  display: flex; justify-content: center; align-items: center;
-  font-weight: bold; cursor: pointer;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
-  z-index: 101;
-
-  transform: rotate(calc(var(--i) * (360deg / var(--count)))) 
-             translateY(var(--radius))
-             rotate(calc(var(--i) * (-360deg / var(--count))));
+  pointer-events: none;
+  z-index: 0;
 }
-.guess-option:hover {
-  background: #ffe082;
-  box-shadow: 0 4px 10px rgba(255, 215, 0, 0.5);
+
+.deck-piles {
+  position: absolute;
+  top: 65%; /* 🔥 [수정] 타이머와 겹치지 않도록 아래로 이동 */
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  gap: 20px;
+  z-index: 5;
+}
+
+.deck {
+  width: 50px;
+  height: 75px;
+  border-radius: 6px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+  position: relative;
+}
+
+.deck::before {
+  content: '';
+  position: absolute;
+  top: -2px; left: -2px; right: -2px; bottom: -2px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.1);
+  z-index: -1;
+}
+
+/* 카드 쌓인 느낌 (가상 요소) */
+.deck::after {
+  content: '';
+  position: absolute;
+  top: -4px; left: 2px; width: 100%; height: 100%;
+  border-radius: 6px;
+  background: inherit;
+  z-index: -2;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.deck.black {
+  background: #1a1a1a;
+  border: 1px solid #444;
+  color: #ffd700;
+}
+
+.deck.white {
+  background: #f0f0f0;
+  border: 1px solid #ccc;
+  color: #333;
+}
+
+.deck-count {
+  font-weight: bold;
+  font-size: 1.2rem;
+  z-index: 2;
+}
+
+.deck-label {
+  position: absolute;
+  top: 5px;
+  font-size: 0.6rem;
+  opacity: 0.7;
+  letter-spacing: 1px;
 }
 </style>

@@ -1,39 +1,64 @@
 <template>
   <div class="room-container">
-    <h1>🎮 커스텀 매치</h1>
+    <div class="header-section">
+      <h1>🎮 대기실</h1>
+      <p class="sub-text">플레이어가 모두 모이면 게임을 시작하세요</p>
+    </div>
 
-    <p class="room-code">
-      방 코드: <strong>{{ roomId }}</strong>
-      <button @click="copyRoomCode" class="copy-btn">복사</button>
-    </p>
-
-    <h2>참가자</h2>
-
-    <div class="player-list">
-      <div
-        v-for="p in players"
-        :key="p.uid"
-        class="player-card"
-      >
-        <span class="name">
-          {{ p.name }}
-          <span v-if="p.id === 0">(방장)</span>
-        </span>
+    <div class="code-section">
+      <span class="label">ROOM CODE</span>
+      <div class="code-box" @click="copyRoomCode">
+        <span class="code-text">{{ roomId }}</span>
+        <span class="copy-icon" title="복사하기">📋</span>
       </div>
     </div>
 
-    <!-- 방장만 게임 시작 가능 -->
-    <button
-      v-if="isHost"
-      class="start-btn"
-      @click="startGame"
-    >
-      🚀 게임 시작
-    </button>
+    <div class="player-section">
+      <h2>참가자 <span class="count">({{ players.length }}/4)</span></h2>
+      
+      <div class="player-grid">
+        <div
+          v-for="p in players"
+          :key="p.uid"
+          class="player-card"
+          :class="{ 'is-host': p.id === 0 }"
+        >
+          <div class="avatar">
+            {{ p.name ? p.name.charAt(0).toUpperCase() : '?' }}
+          </div>
+          <div class="player-info">
+            <span class="name">{{ p.name }}</span>
+            <span v-if="p.id === 0" class="host-badge">👑 방장</span>
+          </div>
+        </div>
 
-    <button class="leave-btn" @click="leaveRoom">
-      나가기
-    </button>
+        <div v-for="i in (4 - players.length)" :key="`empty-${i}`" class="player-card empty">
+          <div class="avatar empty-avatar"></div>
+          <div class="player-info">
+            <span class="name waiting">대기 중...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="action-buttons">
+      <button
+        v-if="isHost"
+        class="start-btn"
+        @click="startGame"
+        :disabled="players.length < 2"
+      >
+        <span class="btn-text">🚀 게임 시작</span>
+      </button>
+      
+      <p v-else class="waiting-msg">
+        방장이 게임을 시작할 때까지 대기해주세요...
+      </p>
+
+      <button class="leave-btn" @click="leaveRoom">
+        나가기
+      </button>
+    </div>
   </div>
 </template>
 
@@ -56,7 +81,6 @@ const currentUid = ref<string | null>(null);
 const nickname = ref("Guest");
 const players = ref<any[]>([]);
 const isHost = ref(false);
-const mySid = ref(socket.id); // 재접속 대비
 
 // 게임 시작 시 leave_room 방지
 const gameHasStarted = ref(false);
@@ -73,6 +97,14 @@ function bindAuthListener() {
       nickname.value = snap.exists()
         ? snap.data().nickname
         : "Guest";
+        
+      // 닉네임 로드 후 입장 처리 (새로고침 대응)
+      socket.emit("enter_room", {
+        roomId,
+        uid: user.uid,
+        name: nickname.value,
+      });
+
     } else {
       currentUid.value = null;
       nickname.value = "Guest";
@@ -85,7 +117,6 @@ function bindAuthListener() {
 // -------------------------
 function onRoomState(data: any) {
   players.value = data.players || [];
-
   const me = players.value.find((p: any) => p.uid === currentUid.value);
   if (me) isHost.value = me.id === 0;
 }
@@ -111,7 +142,6 @@ function leaveRoom() {
   router.push("/custom-match");
 }
 
-// 새로고침 / 창 닫기 방지
 function handleBeforeUnload() {
   if (currentUid.value && !gameHasStarted.value) {
     socket.emit("leave_room", { roomId, uid: currentUid.value });
@@ -122,32 +152,12 @@ function handleBeforeUnload() {
 // 게임 시작
 // -------------------------
 function startGame() {
+  if (players.value.length < 2) {
+    alert("게임을 시작하려면 최소 2명의 플레이어가 필요합니다.");
+    return;
+  }
   socket.emit("start_game", { roomId });
 }
-
-// -------------------------
-// onMounted
-// -------------------------
-let unsubscribeAuth: () => void;
-
-onMounted(() => {
-  window.addEventListener("beforeunload", handleBeforeUnload);
-
-  unsubscribeAuth = bindAuthListener();
-
-  // 소켓 리스너 등록
-  socket.on("room_state", onRoomState);
-  socket.on("game_started", onGameStarted);
-  socket.on("error_message", onErrorMessage);
-
-  // 방 입장 시 서버에 알림
-  if (auth.currentUser?.uid)
-    socket.emit("enter_room", {
-      roomId,
-      uid: auth.currentUser.uid,
-      name: nickname.value,
-    });
-});
 
 async function copyRoomCode() {
   try {
@@ -155,13 +165,25 @@ async function copyRoomCode() {
     alert("방 코드가 복사되었습니다!");
   } catch (err) {
     console.error("클립보드 복사 실패:", err);
-    alert("복사 실패… 브라우저 권한을 확인해주세요.");
   }
 }
 
 // -------------------------
-// onUnmounted
+// 라이프사이클
 // -------------------------
+let unsubscribeAuth: () => void;
+
+onMounted(() => {
+  window.addEventListener("beforeunload", handleBeforeUnload);
+  
+  // 소켓 리스너 등록
+  socket.on("room_state", onRoomState);
+  socket.on("game_started", onGameStarted);
+  socket.on("error_message", onErrorMessage);
+  
+  unsubscribeAuth = bindAuthListener();
+});
+
 onUnmounted(() => {
   window.removeEventListener("beforeunload", handleBeforeUnload);
 
@@ -171,7 +193,6 @@ onUnmounted(() => {
   socket.off("game_started", onGameStarted);
   socket.off("error_message", onErrorMessage);
 
-  // 로비에서 화면 이동 시에만 leave_room 실행
   if (!gameHasStarted.value && currentUid.value) {
     socket.emit("leave_room", {
       roomId,
@@ -182,50 +203,243 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* 컨테이너 (글래스모피즘) */
 .room-container {
   max-width: 500px;
-  margin: 100px auto;
+  margin: 80px auto;
+  padding: 40px 30px;
+  border-radius: 24px;
+  background: rgba(15, 12, 41, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   text-align: center;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  color: white;
+  animation: scaleUp 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
-.room-code {
-  font-size: 18px;
-  margin-bottom: 20px;
+
+@keyframes scaleUp {
+  from { transform: scale(0.9); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
 }
-.copy-btn {
-  margin-left: 10px;
-  padding: 4px 8px;
-  font-size: 14px;
+
+/* 헤더 */
+.header-section h1 {
+  font-size: 2.2rem;
+  font-weight: 800;
+  margin-bottom: 8px;
+  text-shadow: 0 0 15px rgba(66, 133, 244, 0.6);
 }
-.player-list {
-  margin: 20px 0;
+
+.sub-text {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.9rem;
+  margin-bottom: 25px;
 }
+
+/* 방 코드 섹션 */
+.code-section {
+  margin-bottom: 30px;
+}
+
+.label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 1px;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.code-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 2px dashed rgba(255, 255, 255, 0.2);
+  padding: 10px 20px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.code-box:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: #4285f4;
+}
+
+.code-text {
+  font-family: 'Monaco', 'Consolas', monospace;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #ffd700;
+  letter-spacing: 2px;
+}
+
+.copy-icon {
+  font-size: 1.2rem;
+  opacity: 0.7;
+}
+
+/* 플레이어 리스트 섹션 */
+.player-section {
+  text-align: left;
+  margin-bottom: 30px;
+}
+
+.player-section h2 {
+  font-size: 1.1rem;
+  margin-bottom: 15px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.count {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.player-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+/* 플레이어 카드 */
 .player-card {
-  background: #f0f0f0;
+  background: rgba(255, 255, 255, 0.07);
   padding: 12px;
-  margin: 10px;
-  border-radius: 8px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid transparent;
+  transition: all 0.3s ease;
 }
+
+.player-card.is-host {
+  background: linear-gradient(135deg, rgba(66, 133, 244, 0.15), rgba(15, 12, 41, 0.3));
+  border-color: rgba(66, 133, 244, 0.4);
+  box-shadow: 0 0 15px rgba(66, 133, 244, 0.1);
+}
+
+.player-card.empty {
+  border: 2px dashed rgba(255, 255, 255, 0.1);
+  background: transparent;
+  opacity: 0.6;
+}
+
+.avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 1.1rem;
+  color: white;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+}
+
+.empty-avatar {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.player-info {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .name {
-  font-size: 18px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+
+.waiting {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.4);
+  font-style: italic;
+}
+
+.host-badge {
+  font-size: 0.75rem;
+  color: #ffd700;
+  font-weight: bold;
+  margin-top: 2px;
+}
+
+/* 액션 버튼 */
+.action-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+button {
+  width: 100%;
+  padding: 16px;
+  border: none;
+  border-radius: 14px;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  color: white;
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
 .start-btn {
-  background: #4caf50;
-  color: white;
-  padding: 14px 20px;
-  font-size: 18px;
-  border: none;
-  border-radius: 10px;
-  cursor: pointer;
-  margin-top: 20px;
+  background: linear-gradient(135deg, #4285f4, #34a853);
+  box-shadow: 0 8px 20px rgba(52, 168, 83, 0.3);
 }
+
+.start-btn:hover {
+  transform: translateY(-3px);
+  filter: brightness(1.1);
+}
+
+.start-btn:disabled {
+  background: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.4);
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
 .leave-btn {
-  background: #e53935;
-  color: white;
-  padding: 12px 20px;
-  font-size: 16px;
-  border: none;
-  border-radius: 8px;
-  margin-top: 20px;
-  cursor: pointer;
+  background: transparent;
+  border: 1px solid rgba(229, 57, 53, 0.5);
+  color: #ff6b6b;
+}
+
+.leave-btn:hover {
+  background: rgba(229, 57, 53, 0.1);
+  border-color: #e53935;
+}
+
+.waiting-msg {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.5);
+  animation: pulse 2s infinite;
+  margin-bottom: 10px;
+}
+
+@keyframes pulse {
+  0% { opacity: 0.5; }
+  50% { opacity: 1; }
+  100% { opacity: 0.5; }
 }
 </style>
