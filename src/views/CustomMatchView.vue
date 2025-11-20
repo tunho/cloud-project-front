@@ -1,20 +1,35 @@
 <template>
   <div class="custom-container">
-    <h1>🎮 커스텀 매치</h1>
+    <div class="header-section">
+      <h1>🎮 커스텀 매치</h1>
+      <p class="sub-text">친구와 함께 플레이할 방을 만드세요</p>
+    </div>
 
-    <button class="create-btn" @click="createRoom">
-      ➕ 방 만들기
-    </button>
-
-    <div class="join-box">
-      <input
-        v-model="roomCode"
-        placeholder="방 코드 입력"
-        class="room-input"
-      />
-      <button class="join-btn" @click="joinRoom">
-        🚪 입장하기
+    <div class="action-section">
+      <button class="create-btn" @click="createRoom">
+        <span class="btn-icon">➕</span>
+        <span class="btn-text">새로운 방 만들기</span>
       </button>
+
+      <div class="divider">
+        <span class="line"></span>
+        <span class="text">OR</span>
+        <span class="line"></span>
+      </div>
+
+      <div class="join-box">
+        <label for="roomCodeInput" class="input-label">방 코드 입력</label>
+        <input
+          id="roomCodeInput"
+          v-model="roomCode"
+          placeholder="코드 6자리를 입력하세요"
+          class="room-input"
+          @keyup.enter="joinRoom"
+        />
+        <button class="join-btn" @click="joinRoom">
+          <span class="btn-text">🚪 입장하기</span>
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -121,32 +136,140 @@ function joinRoom() {
 </script>
 
 <style scoped>
+/* 컨테이너 스타일 (유리 질감) */
 .custom-container {
-  max-width: 400px;
-  margin: 120px auto;
+  max-width: 420px;
+  margin: 100px auto;
+  padding: 40px 30px;
+  border-radius: 24px;
+  background: rgba(15, 12, 41, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   text-align: center;
-}
-
-.create-btn,
-.join-btn {
-  padding: 12px 20px;
-  border-radius: 10px;
-  background: #4caf50;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   color: white;
-  border: none;
-  margin: 10px 0;
-  cursor: pointer;
-  font-size: 16px;
+  animation: fadeIn 0.6s ease-out;
 }
 
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 헤더 영역 */
+.header-section h1 {
+  font-size: 2.2rem;
+  font-weight: 800;
+  margin-bottom: 10px;
+  text-shadow: 0 0 15px rgba(66, 133, 244, 0.6);
+}
+
+.sub-text {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.95rem;
+  margin-bottom: 30px;
+}
+
+/* 버튼 공통 스타일 */
+button {
+  width: 100%;
+  padding: 16px;
+  border: none;
+  border-radius: 14px;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 700;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: white;
+}
+
+button:hover {
+  transform: translateY(-3px);
+  filter: brightness(1.1);
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+/* 방 만들기 버튼 */
+.create-btn {
+  background: linear-gradient(135deg, #4285f4, #34a853);
+  box-shadow: 0 8px 20px rgba(52, 168, 83, 0.3);
+}
+
+.btn-icon {
+  font-size: 1.2rem;
+}
+
+/* 구분선 (OR) */
+.divider {
+  display: flex;
+  align-items: center;
+  margin: 25px 0;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.divider .line {
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.divider .text {
+  padding: 0 10px;
+}
+
+/* 입장하기 영역 */
 .join-box {
-  margin-top: 20px;
+  text-align: left;
+}
+
+.input-label {
+  display: block;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.7);
+  margin-bottom: 8px;
+  margin-left: 4px;
 }
 
 .room-input {
-  width: 200px;
-  padding: 10px;
-  border-radius: 6px;
-  margin-bottom: 10px;
+  width: 100%;
+  padding: 16px;
+  margin-bottom: 15px;
+  border-radius: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.3);
+  color: white;
+  font-size: 1rem;
+  outline: none;
+  box-sizing: border-box; /* 패딩 포함 크기 계산 */
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  text-align: center;
+  letter-spacing: 1px;
+}
+
+.room-input::placeholder {
+  color: rgba(255, 255, 255, 0.3);
+  font-weight: 400;
+}
+
+.room-input:focus {
+  border-color: #8e44ad;
+  box-shadow: 0 0 15px rgba(142, 68, 173, 0.4);
+}
+
+/* 입장 버튼 */
+.join-btn {
+  background: linear-gradient(135deg, #8e44ad, #c0392b);
+  box-shadow: 0 8px 20px rgba(192, 57, 43, 0.3);
 }
 </style>
