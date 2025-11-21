@@ -1,16 +1,26 @@
 {
   "extends": "@vue/tsconfig/tsconfig.dom.json",
   "compilerOptions": {
+    // 증분 빌드 정보 저장 (tsBuildInfoFile 사용 시 필수)
+    "composite": true,
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
-    "types": ["vite/client"],
-
-    /* Linting */
+    // Vite 전용 타입
+    "types": [
+      "vite/client"
+    ],
+    /* Linting / Strict */
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true
+    "noFallthroughCasesInSwitch": true
+    // ⬇⬇⬇ TypeScript 최신 버전(5.6+, 5.8+)으로 올린 뒤에 다시 켜는 걸 추천
+    // "noUncheckedSideEffectImports": true,
+    // "erasableSyntaxOnly": true
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue"]
+  "include": [
+    "env.d.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "src/**/*.vue"
+  ]
 }

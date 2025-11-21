@@ -23,30 +23,45 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter, onBeforeRouteLeave } from "vue-router";
 import { socket } from "../socket";
 import { auth, db } from "../firebase";
 import { doc, getDoc } from "firebase/firestore";
 
+const route = useRoute();
 const router = useRouter();
 
-const nickname = ref("...");
+const nickname = ref("Guest");
 const firstLetter = ref("?");
 const elapsed = ref(0);
 let timer: number;
 
 const queueCount = ref(0);
 const queueMax = ref(4);
+const major = ref("");
+const year = ref(0);
+const money = ref(0);
 
-async function loadUserProfile() {
-  const uid = auth.currentUser?.uid;
-  if (!uid) return;
-
-  const snap = await getDoc(doc(db, "users", uid));
-  if (snap.exists()) {
-    const data = snap.data();
-    nickname.value = data.nickname;
-    firstLetter.value = data.nickname?.[0]?.toUpperCase() ?? "?";
+// -------------------------
+// 사용자 정보 로드
+// -------------------------
+async function loadUserProfile(uid: string) {
+  try {
+    const snap = await getDoc(doc(db, "users", uid));
+    if (snap.exists()) {
+      const data = snap.data();
+      console.log("🔥 Loaded User Profile (Raw):", data); // [DEBUG]
+      nickname.value = data.nickname || "Guest";
+      firstLetter.value = nickname.value?.[0]?.toUpperCase() ?? "?";
+      major.value = data.major || "Unknown"; 
+      console.log("✅ Set Major:", major.value); // [DEBUG]
+      year.value = data.year || 0;
+      money.value = data.money || 0;
+    } else {
+      console.warn("⚠️ User profile not found for uid:", uid);
+    }
+  } catch (e) {
+    console.error("Failed to load user profile:", e);
   }
 }
 
@@ -64,11 +79,15 @@ function handleBeforeUnload() {
   socket.emit("leave_queue");
 }
 
-onMounted(async () => {
-  window.addEventListener("beforeunload", handleBeforeUnload);
-  const uid = auth.currentUser?.uid;
+// 🔥 [추가] 브라우저 뒤로가기 = 취소 버튼
+onBeforeRouteLeave((_to, _from, next) => {
+  socket.emit("leave_queue");
+  clearInterval(timer);
+  next();
+});
 
-  await loadUserProfile();
+onMounted(() => {
+  window.addEventListener("beforeunload", handleBeforeUnload);
   startTimer();
 
   socket.off("queue_status");
@@ -77,15 +96,44 @@ onMounted(async () => {
     queueMax.value = data.max;
   });
 
+  const betAmount = parseInt(route.query.bet as string) || 0; 
+
   socket.off("match:success");
   socket.on("match:success", ({ roomId }) => {
     clearInterval(timer);
-    router.push(`/room/${roomId}/play`);
+    router.replace(`/room/${roomId}/play`); 
   });
 
-  socket.emit("join_queue", {
-    uid,
-    name: nickname.value,
+  // 🔥 [FIX] Wait for Auth to be ready
+  const unsubscribe = auth.onAuthStateChanged(async (user) => {
+    if (user) {
+      await loadUserProfile(user.uid);
+      
+      console.log("🚀 Joining Queue with:", {
+        uid: user.uid,
+        nickname: nickname.value,
+        major: major.value,
+        year: year.value,
+        money: money.value,
+        betAmount
+      });
+
+      socket.emit("join_queue", {
+        uid: user.uid,
+        nickname: nickname.value,
+        major: major.value,
+        year: year.value,
+        money: money.value,
+        betAmount: betAmount 
+      });
+    } else {
+      console.warn("⚠️ No authenticated user found in MatchingView");
+      router.push("/"); // Redirect to login if not auth
+    }
+  });
+
+  onUnmounted(() => {
+    unsubscribe();
   });
 });
 

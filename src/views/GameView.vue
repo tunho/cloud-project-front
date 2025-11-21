@@ -1,7 +1,12 @@
 <template>
   <div class="game-container">
-    
-<template v-for="side in sideList" :key="side">
+    <UserProfile />
+    <!-- 1. 게임 초기화 전 로딩 화면 -->
+    <div v-if="phase === 'INIT'" class="loading-screen">
+      <div class="spinner"></div>
+      <p>게임 준비 중...</p>
+    </div>
+    <template v-for="side in sideList" :key="side">
       <template v-for="p in players" :key="side + '-' + p.sid">
         <div v-if="seatMap[p.sid] === side" :class="side + (side === 'top' ? '-player' : '-zone')">
           <div :class="side === 'top' ? '' : side + '-hand'">
@@ -13,6 +18,7 @@
               :side="side"  :isMyTurn="isMyTurn"
               :selectedTarget="selectedTarget"
               @select-tile="handleTileSelected"
+            @show-info="showPlayerInfo"
             />
           </div>
         </div>
@@ -40,7 +46,7 @@
       <GameTimer
         v-else-if="!isGuessingUIOpen && !isWaitingForResult && !showResultModal"
         :circleStyle="circleStyle"
-        :currentPlayerName="orderedPlayers[currentTurn]?.name"
+        :currentPlayerName="orderedPlayers[currentTurn]?.nickname || orderedPlayers[currentTurn]?.name"
         :isMyTurn="isMyTurn"
       />
 
@@ -50,6 +56,16 @@
     </div>
 
     <div v-if="me && seatMap[me.sid] === 'bottom'">
+      <div class="deck-piles">
+      <div id="deck-black" class="deck black">
+        <span class="deck-count">{{ piles.black }}</span>
+        <span class="deck-label">BLACK</span>
+      </div>
+      <div id="deck-white" class="deck white">
+        <span class="deck-count">{{ piles.white }}</span>
+        <span class="deck-label">WHITE</span>
+      </div>
+    </div>
       <div class="my-hand">
         <PlayerCard
           :player="me"
@@ -60,6 +76,7 @@
           :isMyTurn="isMyTurn"
           :selectedTarget="selectedTarget"
           @select-tile="handleTileSelected"
+          @show-info="showPlayerInfo"
         />
       </div>
     </div>
@@ -87,19 +104,36 @@
     />
 
     <FlyingCardOverlay
-      :isVisible="isFlying"
-      :startRect="flyStartRect"
-      :endRect="flyEndRect"
-      :color="flyColor"
+      :cards="flyingCards"
       @animation-complete="handleFlyComplete"
     />
+
+    <GameOverModal
+      :isVisible="showGameOverModal"
+      :myResult="myPayoutResult"
+      @close="handleGameOverClose"
+    />
+
+    <!-- 🔥 [NEW] Player Info Modal - Teleport로 body로 이동 -->
+    <Teleport to="body">
+      <PlayerInfoModal
+        :isOpen="showPlayerInfoModal"
+        :player="selectedPlayerInfo"
+        @close="closePlayerInfo"
+      />
+    </Teleport>
+
+    <!-- 🔥 [추가] 나가기 버튼 -->
+    <button class="exit-btn" @click="handleExitRoom">
+      <span class="icon">🚪</span> 나가기
+    </button>
 
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute, useRouter, onBeforeRouteLeave } from "vue-router";
 import { socket } from "../socket";
 
 // 컴포넌트 Import
@@ -111,7 +145,10 @@ import GameTimer from "../components/game/GameTimer.vue";
 import GuessAnimationOverlay from "../components/game/GuessAnimationOverlay.vue";
 import ContinueGuessOverlay from "../components/game/ContinueGuessOverlay.vue";
 import JokerPlacementOverlay from "../components/game/JokerPlacementOverlay.vue";
-import FlyingCardOverlay from "../components/game/FlyingCardOverlay.vue"; // 🔥 [추가]
+import FlyingCardOverlay from "../components/game/FlyingCardOverlay.vue";
+import GameOverModal from "../components/game/GameOverModal.vue";
+import PlayerInfoModal from "../components/game/PlayerInfoModal.vue";  // 🔥 [NEW]
+import UserProfile from "../components/UserProfile.vue"; // 🔥 Import
 
 
 const route = useRoute();
@@ -121,18 +158,19 @@ const maxTime = ref(20);
 
 const isAnimating = ref(false);
 const animIsCorrect = ref(false);
-const animGuessedValue = ref<number | string | null>(null); // 🔥 [추가]
+const animGuessedValue = ref<number | string | null>(null);
 const animTargetRect = ref<{ top: number; left: number; width: number; height: number } | null>(null);
-const currentAnimData = ref<any>(null); // 나중에 서버로 보낼 데이터 저장용
+const currentAnimData = ref<any>(null);
 
 const showContinueOverlay = ref(false);
 const continueTimer = ref(0);
 
-// 🔥 [추가] 카드 날리기 애니메이션 상태
-const isFlying = ref(false);
-const flyStartRect = ref<{ top: number; left: number; width: number; height: number } | null>(null);
-const flyEndRect = ref<{ top: number; left: number; width: number; height: number } | null>(null);
-const flyColor = ref<"black" | "white">("black");
+
+
+// 🔥 [추가] 게임 종료 모달 상태
+const showGameOverModal = ref(false);
+const myPayoutResult = ref<any>(null);  // 🔥 [FIXED] Restored myPayoutResult
+const isExiting = ref(false); // 🔥 [추가] 종료 진행 중 플래그
 
 // ... (기존 상태값 및 로직 그대로 복사) ...
 // players, currentTurn, piles, drawnTile, phase, timeLeft, mySid, selectedTarget
@@ -148,7 +186,7 @@ const flyColor = ref<"black" | "white">("black");
 const players = ref<any[]>([]);
 const currentTurn = ref(0);
 const phase = ref("INIT");
-const piles = ref({ black: 0, white: 0 }); // 🔥 [추가]
+const piles = ref({ black: 0, white: 0 });
 const timeLeft = ref(0);
 let timerInterval: number | null = null;
 const mySid = ref<string | null>(null);
@@ -164,6 +202,10 @@ const guessResult = ref<{ correct: boolean; value: number } | null>(null);
 const currentGuessInfo = ref<{
     guesserName: string; targetName: string; targetTileIndex: number; guessValue: number | string; 
 } | null>(null); 
+
+// 🔥 [NEW] Player Info Modal State
+const showPlayerInfoModal = ref(false);
+const selectedPlayerInfo = ref<any | null>(null);
 
 // -----------------------------
 // 계산 속성 (요약)
@@ -199,14 +241,11 @@ function pickColor(payload: { color: "black" | "white", event: MouseEvent } | "b
     color = payload.color;
     const target = payload.event.currentTarget as HTMLElement;
     if (target) {
-      const rect = target.getBoundingClientRect();
-      flyStartRect.value = {
-        top: rect.top,
-        left: rect.left,
-        width: rect.width,
-        height: rect.height
-      };
-      flyColor.value = color;
+    if (target) {
+      // 🔥 [수정] 직접 애니메이션 상태를 건드리지 않고, 서버 응답(state_update)에서 처리하도록 함
+      // 다만, 클릭한 위치(startRect)를 어딘가에 저장해두고 싶다면 별도 상태로 관리 가능하지만,
+      // 현재 로직(deck ID 기반)이 더 안정적이므로 여기서는 아무것도 안 해도 됨.
+    }
     }
   } else {
     // 하위 호환성 (혹시 모를 직접 호출)
@@ -223,84 +262,133 @@ function handleStateUpdate(data: any) {
 
   // 2. 상태 업데이트
   players.value = data.players || [];
-  currentTurn.value = data.currentTurn ?? 0;
+  
+  // 🔥 [DEBUG] 플레이어 데이터 확인
+  console.log("=== 🔄 State Update Debug ===");
+  players.value.forEach(p => {
+    console.log(`Player [${p.nickname || p.name}]: major=${p.major}, year=${p.year}, money=${p.money}`);
+  });
+
+  // 🔥 [수정] 턴 동기화 로직 개선 (UID 기반)
+  if (data.currentTurnUid) {
+    // 서버가 보내준 UID와 일치하는 플레이어를 찾음
+    const turnPlayer = players.value.find(p => p.uid === data.currentTurnUid);
+    if (turnPlayer) {
+      currentTurn.value = turnPlayer.id;
+    } else {
+      currentTurn.value = data.currentTurn ?? 0;
+    }
+  } else {
+    currentTurn.value = data.currentTurn ?? 0;
+  }
+
   if (data.phase) phase.value = data.phase;
   drawnTile.value = data.drawnTile || null;
-  piles.value = data.piles || { black: 0, white: 0 }; // 🔥 [추가]
+  piles.value = data.piles || { black: 0, white: 0 };
+
+  // 🔥 [FIX] 서버 시간과 동기화
+  if (data.remainingTime !== undefined && data.remainingTime > 0) {
+    // 오차 보정 (네트워크 딜레이 고려하여 약간 여유 둠)
+    const serverTime = Math.floor(data.remainingTime);
+    if (Math.abs(timeLeft.value - serverTime) > 2) { // 2초 이상 차이나면 동기화
+      console.log(`⏰ Timer Sync: Local(${timeLeft.value}) -> Server(${serverTime})`);
+      startLocalTimer(serverTime);
+    }
+  }
 
   // 3. 변경 감지 및 애니메이션 트리거
   players.value.forEach(p => {
     const oldLen = oldHandLengths.get(p.id) || 0;
-    if (p.hand.length > oldLen) {
-      // 카드가 추가됨 -> 애니메이션 대상!
-      const newCardIndex = p.lastDrawnIndex ?? (p.hand.length - 1);
-      const newCard = p.hand[newCardIndex]; 
+    const newLen = p.hand.length;
+    
+    if (newLen > oldLen) {
+      // 🔥 [수정] 여러 장이 추가된 경우 순차적으로 애니메이션 (초기 4장 배분 등)
+      const addedCount = newLen - oldLen;
       
-      // 내 턴이고 이미 pickColor에서 시작 위치를 잡았다면 덮어쓰지 않음
-      if (p.sid === mySid.value && flyStartRect.value) {
-        // pass (keep existing flyStartRect)
-      } else {
-        // 소스 덱 찾기 (없으면 화면 중앙)
-        const sourceId = newCard.color === 'black' ? 'deck-black' : 'deck-white';
-        const sourceEl = document.getElementById(sourceId);
+      for (let i = 0; i < addedCount; i++) {
+        // 추가된 카드의 인덱스 (뒤에서부터 i번째)
+        const cardIndex = oldLen + i;
+        const newCard = p.hand[cardIndex];
         
-        if (sourceEl) {
-          const sRect = sourceEl.getBoundingClientRect();
-          flyStartRect.value = {
-            top: sRect.top, left: sRect.left, width: sRect.width, height: sRect.height
-          };
-        } else {
-          // 덱 엘리먼트가 없으면 화면 중앙에서 시작
-          const w = 50; const h = 75;
-          flyStartRect.value = {
-            top: window.innerHeight / 2 - h / 2,
-            left: window.innerWidth / 2 - w / 2,
-            width: w, height: h
-          };
-        }
-        flyColor.value = newCard.color;
+        // 각 카드마다 딜레이를 줌 (200ms - 천천히)
+        setTimeout(() => {
+          triggerCardAnimation(p, newCard, cardIndex);
+        }, i * 200); // 🔥 [FIX] Slower animation trigger
       }
-
-      // 타겟 카드 찾기 (DOM 업데이트 대기)
-      setTimeout(() => {
-        let visualIndex = newCardIndex;
-        if (seatMap.value[p.sid] === 'top') {
-          visualIndex = p.hand.length - 1 - newCardIndex;
-        }
-
-        const targetId = `player-${p.id}-tile-${visualIndex}`;
-        const targetEl = document.getElementById(targetId);
-
-        if (targetEl) {
-          const tRect = targetEl.getBoundingClientRect();
-          flyEndRect.value = {
-            top: tRect.top, left: tRect.left, width: tRect.width, height: tRect.height
-          };
-          isFlying.value = true;
-          
-          // 잠시 숨기기
-          targetEl.style.opacity = "0";
-        }
-      }, 100);
     }
   });
 }
 
-function handleFlyComplete() {
-  isFlying.value = false;
-  flyStartRect.value = null;
-  flyEndRect.value = null;
+// 🔥 [수정] 다중 카드 애니메이션 상태 관리
+interface FlyingCardItem {
+  id: string;
+  startRect: { top: number; left: number; width: number; height: number };
+  endRect: { top: number; left: number; width: number; height: number };
+  color: "black" | "white";
+  targetDomId: string;
+}
+const flyingCards = ref<FlyingCardItem[]>([]);
+
+function triggerCardAnimation(p: any, newCard: any, newCardIndex: number) {
+  // 소스 덱 찾기 (없으면 화면 중앙)
+  const sourceId = newCard.color === 'black' ? 'deck-black' : 'deck-white';
+  const sourceEl = document.getElementById(sourceId);
   
-  // 모든 플레이어의 숨겨진 카드 복구 (단순화: 모든 타일 opacity 1로 강제하거나, 특정 타일만 복구)
-  // 여기서는 전체 복구보다는, 방금 애니메이션 된 타일을 찾아야 하는데...
-  // 간단히 class로 제어하거나, 다시 DOM 탐색. 
-  // 가장 쉬운 방법: 모든 .tile의 opacity를 1로 리셋하는 CSS class를 toggle하거나,
-  // handleStateUpdate에서 저장해둔 타겟 ID를 ref로 저장해두고 복구.
-  
-  // 여기서는 간단히: "모든 타일은 기본적으로 opacity 1"이므로, 
-  // 인라인 스타일을 제거해주면 됨.
-  const tiles = document.querySelectorAll('.tile');
-  tiles.forEach((el) => (el as HTMLElement).style.opacity = '');
+  let startRect = { top: window.innerHeight / 2 - 37.5, left: window.innerWidth / 2 - 25, width: 50, height: 75 };
+
+  if (sourceEl) {
+    const sRect = sourceEl.getBoundingClientRect();
+    startRect = {
+      top: sRect.top, left: sRect.left, width: sRect.width, height: sRect.height
+    };
+  }
+
+  // 타겟 카드 찾기 (DOM 업데이트 대기)
+  setTimeout(() => {
+    let visualIndex = newCardIndex;
+    // Top과 Right만 역순 처리
+    if (seatMap.value[p.sid] === 'top' || seatMap.value[p.sid] === 'right') {
+      visualIndex = p.hand.length - 1 - newCardIndex;
+    }
+
+    const targetId = `player-${p.id}-tile-${visualIndex}`;
+    const targetEl = document.getElementById(targetId);
+
+    if (targetEl) {
+      const tRect = targetEl.getBoundingClientRect();
+      
+      // 새 애니메이션 항목 추가
+      const animId = `fly-${Date.now()}-${Math.random()}`;
+      flyingCards.value.push({
+        id: animId,
+        startRect,
+        endRect: {
+          top: tRect.top, left: tRect.left, width: tRect.width, height: tRect.height
+        },
+        color: newCard.color,
+        targetDomId: targetId
+      });
+      
+      // 잠시 숨기기
+      targetEl.style.opacity = "0";
+    }
+  }, 50); // DOM 렌더링 대기
+}
+
+function handleFlyComplete(animId: string) {
+  // 해당 애니메이션 항목 찾기
+  const index = flyingCards.value.findIndex(c => c.id === animId);
+  if (index !== -1) {
+    const card = flyingCards.value[index];
+    if (!card) return; // 🔥 [FIX] Safety check
+
+    // 타겟 요소 보이기
+    const el = document.getElementById(card.targetDomId);
+    if (el) el.style.opacity = '';
+    
+    // 리스트에서 제거
+    flyingCards.value.splice(index, 1);
+  }
 }
 
 function handleTurnPhaseStart(data: any) {
@@ -324,11 +412,7 @@ function handleGuessResult(data: any) {
 }
 
 function handleGuessAttempt(data: any) {
-  // 🔥 [수정] 알림 UI 제거로 인해 로직 삭제
   if (data.guesserId === me.value?.id) return;
-  // const guesserPlayer = orderedPlayers.value.find(p => p.id === data.guesserId);
-  // const targetPlayer = orderedPlayers.value.find(p => p.id === data.targetId);
-  // currentGuessInfo.value = { ... };
 }
 
 type Side = "top" | "left" | "right" | "bottom";
@@ -423,10 +507,10 @@ function handleStartGuessAnimation(data: any) {
 
   // 2. 애니메이션 데이터 설정
   animIsCorrect.value = data.correct;
-  animGuessedValue.value = data.value; // 🔥 [추가]
+  animGuessedValue.value = data.value;
   currentAnimData.value = { 
-    roomId: roomId, // route에서 가져온 값
-    guesserUid: data.guesser_id, // (주의: 서버가 보내주는 데이터에 맞춰 수정 필요, uid가 아니라 id일수도 있음)
+    roomId: roomId,
+    guesserUid: data.guesser_id,  // 🔥 [FIXED] 서버에서 보내는 guesser_id는 이미 UID임
     correct: data.correct
   };
 
@@ -441,10 +525,10 @@ function handleAnimationComplete() {
 
   // 4. 서버에 "완료" 신호 전송
   if (currentAnimData.value) {
-    // 서버 game_events.py의 on_animation_done가 받을 데이터 형식 확인
+    // 🔥 [FIXED] guesserUid는 이미 currentAnimData에 UID로 저장되어 있음
     socket.emit("game:animation_done", {
       roomId: roomId,
-      guesserUid: players.value.find(p => p.id === currentAnimData.value.guesserUid)?.uid, // ID -> UID 변환 필요 시
+      guesserUid: currentAnimData.value.guesserUid,  // 이미 UID임
       correct: currentAnimData.value.correct
     });
   }
@@ -471,6 +555,93 @@ function handlePassTurn() {
   socket.emit("stop_guessing", { roomId: roomId });
 }
 
+// 🔥 [NEW] Player Info Functions
+function showPlayerInfo(player: any) {
+  console.log("=== 👁️ showPlayerInfo DEBUG ===");
+  console.log("1. Received player:", player);
+  console.log("2. Player is truthy?", !!player);
+  console.log("3. Modal state BEFORE:", showPlayerInfoModal.value);
+  console.log("4. Selected player BEFORE:", selectedPlayerInfo.value);
+  console.log("5. PlayerInfoModal in DOM?", document.querySelector('.player-info-modal-overlay'));
+  
+  selectedPlayerInfo.value = player;
+  showPlayerInfoModal.value = true;
+  
+  console.log("6. Modal state AFTER:", showPlayerInfoModal.value);
+  console.log("7. Selected player AFTER:", selectedPlayerInfo.value);
+  
+  // Force Vue to update and check DOM
+  setTimeout(() => {
+    const modalEl = document.querySelector('.player-info-modal-overlay');
+    console.log("8. DOM check after nextTick:", modalEl);
+    if (modalEl) {
+      console.log("   - Modal display:", window.getComputedStyle(modalEl).display);
+      console.log("   - Modal visibility:", window.getComputedStyle(modalEl).visibility);
+      console.log("   - Modal opacity:", window.getComputedStyle(modalEl).opacity);
+      console.log("   - Modal z-index:", window.getComputedStyle(modalEl).zIndex);
+    } else {
+      console.error("   ❌ Modal element NOT found in DOM!");
+    }
+  }, 100);
+}
+
+function closePlayerInfo() {
+  showPlayerInfoModal.value = false;
+  selectedPlayerInfo.value = null;
+}
+
+// 🔥 [추가] 게임 정산 결과 핸들링
+function handlePayoutResult(results: any[]) {
+  if (!me.value) return;
+  const myData = results.find(r => r.uid === me.value.uid);
+  if (myData) {
+    myPayoutResult.value = myData;
+    showGameOverModal.value = true;
+  }
+}
+
+function handleGameOverClose() {
+  // 모달에서 '로비로 돌아가기' 클릭 시
+  isExiting.value = false; // 플래그 해제하여 이동 허용
+  router.replace("/platform"); // 🔥 플랫폼 화면으로 이동
+}
+
+// 🔥 [수정] 나가기 버튼 핸들러 (라우터 가드와 로직 공유)
+function handleExitRoom() {
+  // router.push를 호출하면 onBeforeRouteLeave가 트리거됨
+  router.replace("/platform"); // 🔥 플랫폼 화면으로 이동
+}
+
+// 🔥 [추가] 라우터 가드 (뒤로가기 및 나가기 버튼 공통 처리)
+onBeforeRouteLeave((to, from, next) => {
+  // 1. 이미 종료 모달이 떠있거나, 게임이 끝난 상태라면 바로 이동
+  if (!isExiting.value && showGameOverModal.value) {
+    next();
+    return;
+  }
+
+  // 2. 게임 진행 중이 아니라면 바로 이동 (예: 로딩 중 등)
+  if (phase.value === 'INIT' || phase.value === 'GAME_OVER') {
+    next();
+    return;
+  }
+
+  // 3. 사용자 확인
+  if (confirm("정말 나가시겠습니까? 게임이 진행 중이라면 패배 처리되며 베팅 금액을 잃습니다.")) {
+    // 4. 서버에 나가기 요청
+    socket.emit("leave_game", { roomId });
+    
+    // 5. 이동 취소 (모달을 띄워야 하므로)
+    isExiting.value = true;
+    next(false);
+    
+    // 6. 서버로부터 game:payout_result가 오면 모달이 뜸 -> 모달 닫기 버튼으로 다시 이동 시도
+  } else {
+    // 취소 시 이동 안 함
+    next(false);
+  }
+});
+
 
 onMounted(() => {
   mySid.value = socket.id ?? null;
@@ -478,17 +649,101 @@ onMounted(() => {
   socket.on("game:turn_phase_start", handleTurnPhaseStart);
   socket.on("game:guess_result", handleGuessResult);
   socket.on("game:guess_attempt", handleGuessAttempt);
-  socket.on("game_over", (d) => { alert(`게임 종료! 승자: ${d.winner.name}`); router.push("/davinci-home"); });
+  
+  socket.on("game:payout_result", handlePayoutResult);
+
   socket.on("game:start_guess_animation", handleStartGuessAnimation);
-  socket.on("game:prompt_continue", handlePromptContinue); // 🔥 [추가]
+  socket.on("game:prompt_continue", handlePromptContinue);
+  
+  socket.on("game:player_eliminated", (data) => {
+    console.log("💀 Player Eliminated:", data);
+    socket.emit("request_game_state", { roomId });
+  });
+});
+
+// 🔥 [FIX] Move logic to a separate async function or use the existing imports
+import { auth, db } from "../firebase"; // Ensure this is imported at top
+import { doc, getDoc } from "firebase/firestore";
+
+// ... (existing imports)
+
+onMounted(async () => {
+  mySid.value = socket.id ?? null;
+  
+  // ... (socket listeners) ...
+  socket.on("state_update", handleStateUpdate);
+  socket.on("game:turn_phase_start", handleTurnPhaseStart);
+  socket.on("game:guess_result", handleGuessResult);
+  socket.on("game:guess_attempt", handleGuessAttempt);
+  socket.on("game:payout_result", handlePayoutResult);
+  socket.on("game:start_guess_animation", handleStartGuessAnimation);
+  socket.on("game:prompt_continue", handlePromptContinue);
+  socket.on("game:player_eliminated", (data) => {
+    socket.emit("request_game_state", { roomId });
+  });
+
+  // 🔥 [FIX] Re-join room logic
+  const unsubscribe = auth.onAuthStateChanged(async (user) => {
+    if (user) {
+      // Load user info to send to server (important for reconnect)
+      let nickname = user.displayName || "Guest";
+      let major = "";
+      let year = 0;
+      let money = 0;
+
+      try {
+        const snap = await getDoc(doc(db, "users", user.uid));
+        if (snap.exists()) {
+          const d = snap.data();
+          nickname = d.nickname || nickname;
+          major = d.major || "";
+          year = d.year || 0;
+          money = d.money || 0;
+        }
+      } catch (e) {
+        console.error("Failed to load profile for reconnect:", e);
+      }
+
+      console.log("🔄 Re-entering room:", roomId);
+      socket.emit("enter_room", {
+        roomId,
+        uid: user.uid,
+        nickname,
+        major,
+        year,
+        money
+      });
+    }
+  });
+
+  onUnmounted(() => {
+    unsubscribe();
+  });
 });
 
 onUnmounted(() => {
   socket.off("state_update"); socket.off("game:turn_phase_start");
   socket.off("game:guess_result"); socket.off("game:guess_attempt");
+  socket.off("game:player_eliminated"); // 🔥 리스너 해제
   if (timerInterval) clearInterval(timerInterval);
   socket.off("game:start_guess_animation");
-  socket.off("game:prompt_continue"); // 🔥 [추가]
+  socket.off("game:prompt_continue");
+  socket.off("game:payout_result"); // 🔥 [추가]
+  
+  // 🔥 [NEW] 리스너 해제
+  window.removeEventListener("beforeunload", handleBeforeUnload);
+});
+
+// 🔥 [NEW] 새로고침/닫기 방지 경고
+function handleBeforeUnload(e: BeforeUnloadEvent) {
+  if (phase.value !== 'INIT' && phase.value !== 'GAME_OVER') {
+    e.preventDefault();
+    e.returnValue = ''; // Chrome requires returnValue to be set
+  }
+}
+
+onMounted(() => {
+  window.addEventListener("beforeunload", handleBeforeUnload);
 });
 </script>
 
@@ -536,15 +791,16 @@ onUnmounted(() => {
   pointer-events: auto;
 }
 
-.left-hand {
+/* 🔥 [수정] Left/Right Zone - 벽에 붙이기 */
+.left-zone {
   position: absolute;
-  left: 30px;
+  left: 30px;  /* 벽과의 거리 (top: 20px, bottom: 30px와 유사) */
   top: 50%;
   transform: translateY(-50%);
   z-index: 10;
 }
 
-.right-hand {
+.right-zone {
   position: absolute;
   right: 30px;
   top: 50%;
@@ -580,6 +836,8 @@ onUnmounted(() => {
   display: flex;
   gap: 20px;
   z-index: 5;
+  opacity: 0; /* 🔥 [수정] 화면에서 숨김 */
+  pointer-events: none; /* 클릭 방지 */
 }
 
 .deck {
@@ -637,5 +895,35 @@ onUnmounted(() => {
   font-size: 0.6rem;
   opacity: 0.7;
   letter-spacing: 1px;
+}
+
+/* 🔥 [추가] 나가기 버튼 스타일 */
+.exit-btn {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: white;
+  padding: 10px 20px;
+  border-radius: 30px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  backdrop-filter: blur(5px);
+  transition: all 0.3s ease;
+  z-index: 100;
+}
+
+.exit-btn:hover {
+  background: rgba(255, 71, 87, 0.2);
+  border-color: rgba(255, 71, 87, 0.5);
+  transform: translateY(-2px);
+}
+
+.exit-btn .icon {
+  font-size: 1.2rem;
 }
 </style>

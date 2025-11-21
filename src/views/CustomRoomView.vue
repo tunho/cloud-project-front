@@ -1,5 +1,7 @@
 <template>
-  <div class="room-container">
+  <div class="room-wrapper">
+    <UserProfile />
+    <div class="room-container">
     <div class="header-section">
       <h1>🎮 대기실</h1>
       <p class="sub-text">플레이어가 모두 모이면 게임을 시작하세요</p>
@@ -59,19 +61,34 @@
         나가기
       </button>
     </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from "vue";
-import { useRouter, useRoute } from "vue-router";
+import { useRouter, useRoute, onBeforeRouteLeave } from "vue-router";
 import { socket } from "../socket";
 import { auth, db } from "../firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
+import UserProfile from "../components/UserProfile.vue"; // 🔥 Import
 
 const router = useRouter();
 const route = useRoute();
+
+// ... (중략) ...
+
+async function copyRoomCode() {
+  try {
+    await navigator.clipboard.writeText(roomId);
+    alert("방 코드가 복사되었습니다!");
+  } catch (err) {
+    console.error("클립보드 복사 실패:", err);
+  }
+}
+
+
 const roomId = route.params.roomId as string;
 
 // -------------------------
@@ -99,10 +116,15 @@ function bindAuthListener() {
         : "Guest";
         
       // 닉네임 로드 후 입장 처리 (새로고침 대응)
+      const userData = snap.exists() ? snap.data() : {};
       socket.emit("enter_room", {
         roomId,
         uid: user.uid,
         name: nickname.value,
+        nickname: nickname.value,
+        major: userData.major || "",
+        year: userData.year || 0,
+        money: userData.money || 0,
       });
 
     } else {
@@ -124,11 +146,15 @@ function onRoomState(data: any) {
 function onGameStarted(data: any) {
   if (data.roomId === roomId) {
     gameHasStarted.value = true;
-    router.push(`/room/${roomId}/play`);
+    router.replace(`/room/${roomId}/play`); // 🔥 [수정] replace로 변경 (대기방을 히스토리에서 제거)
   }
 }
 
 function onErrorMessage({ message }: { message: string }) {
+  if (message === "존재하지 않는 방입니다.") {
+    router.push("/custom-match");
+    return;
+  }
   alert(message);
 }
 
@@ -141,6 +167,14 @@ function leaveRoom() {
   }
   router.push("/custom-match");
 }
+
+// 🔥 [추가] 브라우저 뒤로가기 = 방 나가기
+onBeforeRouteLeave((_to, _from, next) => {
+  if (currentUid.value && !gameHasStarted.value) {
+    socket.emit("leave_room", { roomId, uid: currentUid.value });
+  }
+  next();
+});
 
 function handleBeforeUnload() {
   if (currentUid.value && !gameHasStarted.value) {
@@ -157,16 +191,10 @@ function startGame() {
     return;
   }
   socket.emit("start_game", { roomId });
+
 }
 
-async function copyRoomCode() {
-  try {
-    await navigator.clipboard.writeText(roomId);
-    alert("방 코드가 복사되었습니다!");
-  } catch (err) {
-    console.error("클립보드 복사 실패:", err);
-  }
-}
+
 
 // -------------------------
 // 라이프사이클
