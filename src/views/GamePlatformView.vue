@@ -1,12 +1,10 @@
 <template>
   <div class="platform-wrapper">
+    <UserProfile />
     <header class="platform-header">
       <div class="logo">
         <span class="icon">♟️</span>
         <h1>JBNU GAME</h1>
-      </div>
-      <div class="user-profile">
-        <span class="user-badge">Student</span>
       </div>
     </header>
 
@@ -23,7 +21,7 @@
 
 
             <div class="game-icon">🧩</div>
-            <h3>다빈치 코드</h3>
+            <h3>Davinci Code</h3>
             <p class="desc">상대방의 코드를 추리하는<br>고도의 심리 전략 게임</p>
             <button class="play-btn">PLAY NOW</button>
           </div>
@@ -44,6 +42,7 @@
 
 <script setup lang="ts">
 import { useRouter } from "vue-router";
+import UserProfile from "../components/UserProfile.vue";
 
 const router = useRouter();
 

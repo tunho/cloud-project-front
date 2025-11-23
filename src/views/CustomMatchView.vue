@@ -1,5 +1,12 @@
 <template>
+  <UserProfile />
+  <button class="back-btn" @click="goBack">
+    <span class="icon">⬅️</span> 다비치 코드
+  </button>
   <div class="custom-container">
+    <!-- 🔥 [추가] 뒤로가기 버튼 -->
+
+
     <div class="header-section">
       <h1>🎮 커스텀 매치</h1>
       <p class="sub-text">친구와 함께 플레이할 방을 만드세요</p>
@@ -36,11 +43,12 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from "vue";
-import { useRouter } from "vue-router";
+import { useRouter, onBeforeRouteLeave } from "vue-router";
 import { socket } from "../socket";
 import { auth, db } from "../firebase";
 import { doc, getDoc } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
+import UserProfile from "../components/UserProfile.vue";
 
 const router = useRouter();
 const roomCode = ref("");
@@ -92,7 +100,7 @@ function onRoomCreated({ roomId }: { roomId: string }) {
   router.push(`/custom-match/${roomId}`);
 }
 
-function onRoomState(data: any) {
+function onRoomState(_data: any) {
   // 방 상태를 받았다는 것은 입장이 성공했다는 의미
   const code = roomCode.value.trim();
   router.push(`/custom-match/${code}`);
@@ -105,12 +113,32 @@ function onErrorMessage({ message }: { message: string }) {
 // -------------------------------------------------
 // 방 만들기
 // -------------------------------------------------
-function createRoom() {
+// -------------------------------------------------
+// 방 만들기
+// -------------------------------------------------
+async function createRoom() {
   if (!currentUid.value) return;
+
+  // 🔥 [수정] 방 생성 시에도 상세 정보 전송
+  const snap = await getDoc(doc(db, "users", currentUid.value));
+  let major = "";
+  let year = 0;
+  let money = 0;
+  
+  if (snap.exists()) {
+    const data = snap.data();
+    major = data.major || "";
+    year = data.year || 0;
+    money = data.money || 0;
+  }
 
   socket.emit("create_room", {
     uid: currentUid.value,
     name: nickname.value,
+    nickname: nickname.value,
+    major,
+    year,
+    money
   });
 }
 
@@ -126,13 +154,39 @@ function joinRoom() {
     return;
   }
 
-  // emit만 실행해야 함 (리스너를 여기 추가 X)
-  socket.emit("enter_room", {
-    roomId: code,
-    uid: currentUid.value,
-    name: nickname.value,
+  // 🔥 [수정] 입장 시에도 상세 정보 전송
+  getDoc(doc(db, "users", currentUid.value)).then((snap) => {
+    let major = "";
+    let year = 0;
+    let money = 0;
+    
+    if (snap.exists()) {
+      const data = snap.data();
+      major = data.major || "";
+      year = data.year || 0;
+      money = data.money || 0;
+    }
+
+    socket.emit("enter_room", {
+      roomId: code,
+      uid: currentUid.value,
+      name: nickname.value,
+      nickname: nickname.value,
+      major,
+      year,
+      money
+    });
   });
 }
+
+function goBack() {
+  router.push("/davinci-home");
+}
+
+// 🔥 [추가] 브라우저 뒤로가기 = 뒤로가기 버튼
+onBeforeRouteLeave((_to, _from, next) => {
+  next();
+});
 </script>
 
 <style scoped>
@@ -271,5 +325,24 @@ button:active {
 .join-btn {
   background: linear-gradient(135deg, #8e44ad, #c0392b);
   box-shadow: 0 8px 20px rgba(192, 57, 43, 0.3);
+}
+
+/* 🔥 [추가] 뒤로가기 버튼 스타일 */
+.back-btn {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  width: auto;
+  padding: 10px 20px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 30px;
+  font-size: 0.9rem;
+  backdrop-filter: blur(5px);
+}
+
+.back-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: translateX(-5px);
 }
 </style>

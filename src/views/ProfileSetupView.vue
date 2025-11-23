@@ -3,15 +3,15 @@
     <h1>JBNU Game Platform</h1>
 
     <div class="form-box">
-      <label>학과 선택</label>
+      <label>학과</label>
       <select v-model="major">
-        <option disabled value="">학과 선택</option>
+        <option disabled value="">학과</option>
         <option v-for="m in majors" :key="m" :value="m">{{ m }}</option>
       </select>
 
-      <label>입학년도 (학번)</label>
+      <label>학번</label>
       <select v-model="year">
-        <option disabled value="">입학년도 선택</option>
+        <option disabled value="">학번</option>
         <option v-for="y in yearList" :key="y" :value="y">{{ y }}</option>
       </select>
 
@@ -35,7 +35,7 @@ const router = useRouter();
 
 // 선택 옵션들
 const majors = ["컴퓨터공학부", "소프트웨어공학과", "전자공학과"];
-const yearList = Array.from({ length: 15 }, (_, i) => 2010 + i);
+const yearList = Array.from({ length: 35 }, (_, i) => 90 + i);
 
 // 사용자 입력
 const major = ref("");
@@ -64,7 +64,7 @@ async function enter() {
       year: year.value,
       nickname: nickname.value,
       email: user.email,
-      money: 1,
+      money: 100,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
