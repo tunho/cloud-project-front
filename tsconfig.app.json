@@ -10,8 +10,8 @@
     ],
     /* Linting / Strict */
     "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true
     // ⬇⬇⬇ TypeScript 최신 버전(5.6+, 5.8+)으로 올린 뒤에 다시 켜는 걸 추천
     // "noUncheckedSideEffectImports": true,

@@ -6,7 +6,7 @@
       <div class="player-info-badge" :class="side">
         <div class="nickname-row">
           <span class="nickname">{{ player.nickname || player.name }}</span>
-          <span class="bet-amount" v-if="player.betAmount">💰{{ player.betAmount }}</span>
+          <span class="bet-amount" v-if="typeof player.betAmount === 'number'">💰{{ player.betAmount }}</span>
           <button class="info-btn" @click.stop="() => { console.log('👁️ Info button clicked!', player); emit('show-info', player); }" title="플레이어 정보">👁️</button>
         </div>
       </div>
@@ -89,6 +89,15 @@ const props = defineProps<{
   selectedTarget?: { targetId: number; index: number } | null;
   isMyTurn?: boolean;
 }>();
+
+// 🔥 [DEBUG] Check player data
+import { onMounted, watch } from "vue";
+onMounted(() => {
+  // console.log(`🃏 PlayerCard mounted for ${props.player.nickname}: bet=${props.player.betAmount}`);
+});
+watch(() => props.player, (newVal) => {
+  // console.log(`🃏 PlayerCard updated for ${newVal.nickname}: bet=${newVal.betAmount}`);
+}, { deep: true });
 
 const emit = defineEmits<{
   (e: "select-tile", payload: { targetId: number; index: number }): void;
