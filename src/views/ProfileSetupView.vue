@@ -64,7 +64,7 @@ async function enter() {
       year: year.value,
       nickname: nickname.value,
       email: user.email,
-      money: 100,
+      money: 10000,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
