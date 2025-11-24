@@ -2,9 +2,15 @@
   <div class="platform-wrapper">
     <UserProfile />
     <header class="platform-header">
-      <div class="logo">
-        <span class="icon">♟️</span>
-        <h1>JBNU GAME</h1>
+      <div class="header-left">
+        <div class="logo">
+          <span class="icon">♟️</span>
+          <h1>JBNU GAME</h1>
+        </div>
+        <!-- 🔥 [NEW] 랭킹 버튼 (로고 옆에 배치하여 프로필과 겹치지 않게 함) -->
+        <button class="ranking-btn" @click="openLeaderboard">
+          <span class="icon">🏆</span> 랭킹
+        </button>
       </div>
     </header>
 
@@ -37,17 +43,34 @@
         </div>
       </div>
     </main>
+
+    <!-- 🔥 [NEW] 랭킹 모달 -->
+    <LeaderboardModal 
+      :is-visible="showLeaderboard" 
+      @close="closeLeaderboard" 
+    />
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref } from "vue";
 import { useRouter } from "vue-router";
 import UserProfile from "../components/UserProfile.vue";
+import LeaderboardModal from "../components/LeaderboardModal.vue"; // 🔥 Import
 
 const router = useRouter();
+const showLeaderboard = ref(false);
 
 function goDavinci() {
   router.push("/davinci-home");
+}
+
+function openLeaderboard() {
+  showLeaderboard.value = true;
+}
+
+function closeLeaderboard() {
+  showLeaderboard.value = false;
 }
 </script>
 
@@ -89,6 +112,13 @@ body, html {
   position: sticky; /* 스크롤 시 헤더 고정 (선택사항) */
   top: 0;
   z-index: 100;
+  gap: 2rem; /* 로고와 버튼 사이 간격 */
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem; /* 로고와 랭킹 버튼 사이 간격 */
 }
 
 .logo {
@@ -245,5 +275,31 @@ body, html {
 @keyframes fadeInDown {
   from { opacity: 0; transform: translateY(-20px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* 🔥 [추가] 랭킹 버튼 스타일 */
+.ranking-btn {
+  background: linear-gradient(135deg, #ffd700, #fdb931);
+  border: none;
+  color: #5a4a00;
+  padding: 8px 16px;
+  border-radius: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+  font-size: 0.9rem;
+  box-shadow: 0 4px 15px rgba(255, 215, 0, 0.3);
+  transition: all 0.3s ease;
+}
+
+.ranking-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(255, 215, 0, 0.5);
+}
+
+.ranking-btn .icon {
+  font-size: 1.1rem;
 }
 </style>

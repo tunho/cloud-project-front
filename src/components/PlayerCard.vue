@@ -6,7 +6,10 @@
       <div class="player-info-badge" :class="side">
         <div class="nickname-row">
           <span class="nickname">{{ player.nickname || player.name }}</span>
-          <span class="bet-amount" v-if="typeof player.betAmount === 'number'">💰{{ player.betAmount }}</span>
+          <div class="bet-badge" v-if="player.betAmount != null">
+            <span class="bet-icon">⛃</span>
+            <span class="bet-value">{{ player.betAmount.toLocaleString() }}</span>
+          </div>
           <button class="info-btn" @click.stop="() => { console.log('👁️ Info button clicked!', player); emit('show-info', player); }" title="플레이어 정보">👁️</button>
         </div>
       </div>
@@ -162,6 +165,9 @@ const orderedHand = computed(() => {
 });
 
 const isEliminated = computed(() => {
+  // 🔥 [FIX] Rank가 0보다 크면 탈락한 것임 (서버 동기화)
+  if (props.player.rank && props.player.rank > 0) return true;
+  
   if (!props.player.hand || props.player.hand.length === 0) return false;
   return props.player.hand.every((t: any) => t.revealed);
 });
@@ -482,4 +488,35 @@ const isEliminated = computed(() => {
   0% { transform: translate(-50%, -50%) scale(2) rotate(0deg); opacity: 0; }
   100% { transform: translate(-50%, -50%) scale(1) rotate(-15deg); opacity: 1; }
 }
+
+/* 🔥 [NEW] Bet Badge Styles */
+.bet-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: linear-gradient(135deg, #ffd700, #fdb931);
+  padding: 4px 10px;
+  border-radius: 12px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+  margin-left: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  animation: pulse-gold 2s infinite;
+}
+
+.bet-icon {
+  font-size: 0.9rem;
+}
+
+.bet-value {
+  font-weight: 800;
+  color: #5a4a00;
+  font-size: 0.9rem;
+  font-family: 'Roboto Mono', monospace;
+}
+
+@keyframes pulse-gold {
+  0% { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.4); }
+  70% { box-shadow: 0 0 0 6px rgba(255, 215, 0, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 215, 0, 0); }
+  }
 </style>

@@ -39,12 +39,12 @@
       />
 
       <GameDrawUI
-        v-if="isMyTurn && phase === 'DRAWING' && !showResultModal"
+        v-if="isMyTurn && phase === 'DRAWING' && !showResultModal && !isInitialAnimationPlaying"
         @pick-color="pickColor"
       />
 
       <GameTimer
-        v-else-if="!isGuessingUIOpen && !isWaitingForResult && !showResultModal"
+        v-else-if="!isGuessingUIOpen && !isWaitingForResult && !showResultModal && !isTimerHidden && !isInitialAnimationPlaying"
         :circleStyle="circleStyle"
         :currentPlayerName="orderedPlayers[currentTurn]?.nickname || orderedPlayers[currentTurn]?.name"
         :isMyTurn="isMyTurn"
@@ -88,30 +88,42 @@
       :guessedValue="animGuessedValue"
       @animation-complete="handleAnimationComplete"
     />
+    <!-- 🔥 [NEW] 타임아웃 알림 토스트 -->
+    <Transition name="toast">
+      <div v-if="showTimeoutToast" :class="['timeout-toast', toastType]">
+        {{ timeoutToastMessage }}
+      </div>
+    </Transition>
 
+    <!-- 조커 위치 지정 오버레이 -->
+    <JokerPlacementOverlay
+      v-if="isMyTurn && phase === 'PLACE_JOKER' && drawnTile && drawnTile.isJoker"
+      :hand="myHand"
+      :drawn-tile="drawnTile"
+      @place-joker="handlePlaceJoker"
+    />
+    
+    <!-- 추리 성공 후 계속하기/멈추기 선택 오버레이 -->
     <ContinueGuessOverlay
-      :isVisible="showContinueOverlay"
+      v-if="isMyTurn && phase === 'POST_SUCCESS_GUESS' && showContinueOverlay"
+      :is-visible="true"
       :timer="continueTimer"
       @continue="handleContinueGuess"
       @pass="handlePassTurn"
     />
 
-    <JokerPlacementOverlay
-      v-if="phase === 'PLACE_JOKER' && isMyTurn && me"
-      :hand="me.hand"
-      :drawnTile="drawnTile"
-      @place-joker="handlePlaceJoker"
+    <!-- 게임 오버 모달 -->
+    <GameOverModal
+      v-if="showGameOverModal"
+      :is-visible="true"
+      :my-result="myPayoutResult"
+      @close="handleGameOverClose"
     />
 
+    <!-- 날아가는 카드 오버레이 -->
     <FlyingCardOverlay
       :cards="flyingCards"
       @animation-complete="handleFlyComplete"
-    />
-
-    <GameOverModal
-      :isVisible="showGameOverModal"
-      :myResult="myPayoutResult"
-      @close="handleGameOverClose"
     />
 
     <!-- 🔥 [NEW] Player Info Modal - Teleport로 body로 이동 -->
@@ -134,12 +146,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRoute, useRouter, onBeforeRouteLeave } from "vue-router";
-import { socket } from "../socket";
+import { socket, gameEntryGuard } from "../socket";
+import { auth, db } from "../firebase"; // 🔥 [FIX] Added missing imports
+import { doc, getDoc } from "firebase/firestore";
 
 // 컴포넌트 Import
 import PlayerCard from "../components/PlayerCard.vue";
 import GuessInputWheel from "../components/game/GuessInputWheel.vue";
-import GameNotification from "../components/game/GameNotification.vue";
 import GameDrawUI from "../components/game/GameDrawUI.vue";
 import GameTimer from "../components/game/GameTimer.vue";
 import GuessAnimationOverlay from "../components/game/GuessAnimationOverlay.vue";
@@ -170,6 +183,12 @@ const continueTimer = ref(0);
 // 🔥 [추가] 게임 종료 모달 상태
 const showGameOverModal = ref(false);
 const myPayoutResult = ref<any>(null);  // 🔥 [FIXED] Restored myPayoutResult
+
+// 🔥 [NEW] 초기 애니메이션 상태 및 타임아웃 알림
+const isInitialAnimationPlaying = ref(false);
+const showTimeoutToast = ref(false);
+const timeoutToastMessage = ref("");
+
 const isExiting = ref(false); // 🔥 [추가] 종료 진행 중 플래그
 
 // ... (기존 상태값 및 로직 그대로 복사) ...
@@ -207,11 +226,18 @@ const currentGuessInfo = ref<{
 const showPlayerInfoModal = ref(false);
 const selectedPlayerInfo = ref<any | null>(null);
 
+// 🔥 [NEW] Timer Visibility State
+const isTimerHidden = ref(false);
+
+// 🔥 [NEW] Toast State
+const toastType = ref<'error' | 'info'>('error');
+
 // -----------------------------
 // 계산 속성 (요약)
 // -----------------------------
 const orderedPlayers = computed(() => [...players.value].sort((a, b) => a.id - b.id));
 const me = computed(() => players.value.find((p) => p.sid === mySid.value) || null);
+const myHand = computed(() => me.value?.hand || []); // 🔥 [FIX] Added myHand computed property
 const isMyTurn = computed(() => me.value && me.value.id === currentTurn.value);
 const isGuessingUIOpen = computed(() => !!selectedTarget.value);
 const circleStyle = computed(() => {
@@ -266,7 +292,7 @@ function handleStateUpdate(data: any) {
   // 🔥 [DEBUG] 플레이어 데이터 확인
   console.log("=== 🔄 State Update Debug ===");
   players.value.forEach(p => {
-    console.log(`Player [${p.nickname || p.name}]: major=${p.major}, year=${p.year}, money=${p.money}`);
+    console.log(`Player [${p.nickname || p.name}]: major=${p.major}, year=${p.year}, money=${p.money}, bet=${p.betAmount}`);
   });
 
   // 🔥 [수정] 턴 동기화 로직 개선 (UID 기반)
@@ -282,18 +308,23 @@ function handleStateUpdate(data: any) {
     currentTurn.value = data.currentTurn ?? 0;
   }
 
-  if (data.phase) phase.value = data.phase;
+  // 🔥 [FIX] Timer Synchronization
+  if (typeof data.remainingTime === 'number') {
+    // Only update if difference is significant (>2s) to avoid jitter
+    // AND if timer is not explicitly hidden (e.g. during animation)
+    if (!isTimerHidden.value && Math.abs(timeLeft.value - data.remainingTime) > 2) {
+      console.log(`⏱️ Syncing timer: ${timeLeft.value} -> ${data.remainingTime}`);
+      startLocalTimer(data.remainingTime);
+    }
+  }
+
+  phase.value = data.phase || "INIT";
   drawnTile.value = data.drawnTile || null;
   piles.value = data.piles || { black: 0, white: 0 };
 
-  // 🔥 [FIX] 서버 시간과 동기화
-  if (data.remainingTime !== undefined && data.remainingTime > 0) {
-    // 오차 보정 (네트워크 딜레이 고려하여 약간 여유 둠)
-    const serverTime = Math.floor(data.remainingTime);
-    if (Math.abs(timeLeft.value - serverTime) > 2) { // 2초 이상 차이나면 동기화
-      console.log(`⏰ Timer Sync: Local(${timeLeft.value}) -> Server(${serverTime})`);
-      startLocalTimer(serverTime);
-    }
+  // 🔥 [NEW] 재접속 시 정산 결과 확인
+  if (data.payoutResults && data.payoutResults.length > 0) {
+    handlePayoutResult(data.payoutResults);
   }
 
   // 3. 변경 감지 및 애니메이션 트리거
@@ -305,6 +336,16 @@ function handleStateUpdate(data: any) {
       // 🔥 [수정] 여러 장이 추가된 경우 순차적으로 애니메이션 (초기 4장 배분 등)
       const addedCount = newLen - oldLen;
       
+      // 🔥 [NEW] 초기 배분(3장 이상)일 경우 UI 숨김 처리
+      if (oldLen === 0 && addedCount >= 3) {
+        isInitialAnimationPlaying.value = true;
+        // 애니메이션 총 시간 계산: (마지막 카드 딜레이) + (애니메이션 시간 1s) + (여유 0.5s)
+        const totalDuration = (addedCount - 1) * 200 + 1500;
+        setTimeout(() => {
+          isInitialAnimationPlaying.value = false;
+        }, totalDuration);
+      }
+
       for (let i = 0; i < addedCount; i++) {
         // 추가된 카드의 인덱스 (뒤에서부터 i번째)
         const cardIndex = oldLen + i;
@@ -392,9 +433,29 @@ function handleFlyComplete(animId: string) {
 }
 
 function handleTurnPhaseStart(data: any) {
+  console.log("🎯 [handleTurnPhaseStart] Received:", data); // 🔥 [DEBUG] Timeout issue
+  
+  // 🔥 [NEW] 타임아웃 알림
+  if (data.reason === 'timeout') {
+    const turnPlayer = players.value.find(p => p.uid === data.currentTurnUid);
+    if (turnPlayer) {
+      toastType.value = 'error'; // 🔥 [NEW] Set toast type to error
+      timeoutToastMessage.value = `⏰ ${turnPlayer.nickname}님의 시간이 초과되어 턴이 넘어갑니다!`;
+      showTimeoutToast.value = true;
+      setTimeout(() => {
+        showTimeoutToast.value = false;
+      }, 3000);
+    }
+  }
+
   phase.value = data.phase;
+  drawnTile.value = null;
   maxTime.value = data.timer || 20;
+  
+  // 🔥 [FIX] Show timer and restart
+  isTimerHidden.value = false;
   startLocalTimer(maxTime.value);
+  
   cancelSelection();
   showResultModal.value = false;
   currentGuessInfo.value = null;
@@ -419,8 +480,6 @@ type Side = "top" | "left" | "right" | "bottom";
 
 // 2️⃣ 반복문용 배열을 'as const'로 정의 (타입 고정)
 const sideList = ["top", "left", "right"] as const;
-
-// ... (기존 코드) ...
 
 // 3️⃣ seatMap의 반환 타입도 명시적으로 변경 (권장)
 const seatMap = computed(() => {
@@ -482,7 +541,12 @@ function handleStartGuessAnimation(data: any) {
   
   // 🔥 [수정] 애니메이션 시작 시 대기 상태 해제 (로딩 UI 제거)
   isWaitingForResult.value = false;
+  
+  // 🔥 [FIX] Hide timer during animation
+  isTimerHidden.value = true;
 
+  // ... (rest of logic)
+  
   // 1. 타겟 카드의 DOM 요소 찾기 (PlayerCard에서 ID를 설정해뒀으므로 찾을 수 있음)
   // 🔥 [수정] Top 포지션은 카드가 역순으로 렌더링되므로, 인덱스를 변환해야 함
   let visualIndex = data.index;
@@ -522,6 +586,7 @@ function handleStartGuessAnimation(data: any) {
 function handleAnimationComplete() {
   isAnimating.value = false;
   animTargetRect.value = null;
+  isWaitingForResult.value = false; // 🔥 [FIX] 확실하게 대기 상태 해제
 
   // 4. 서버에 "완료" 신호 전송
   if (currentAnimData.value) {
@@ -537,7 +602,9 @@ function handleAnimationComplete() {
 // --- 4. 연속 추리 (Continue Guessing) ---
 function handlePromptContinue(data: any) {
   console.log("연속 추리 기회!", data);
-  // 기존 타이머 재시작 로직은 유지하되, 오버레이를 띄움
+  
+  // 🔥 [FIX] Show timer and restart
+  isTimerHidden.value = false;
   startLocalTimer(data.timer || 60);
   
   continueTimer.value = data.timer || 60; 
@@ -546,8 +613,13 @@ function handlePromptContinue(data: any) {
 
 function handleContinueGuess() {
   showContinueOverlay.value = false; 
-  // 아무것도 안 해도 됨 (이미 GUESSING/POST_SUCCESS_GUESS 상태임)
-  // 다만 UX적으로 "추리를 계속하세요" 같은 토스트를 띄워줄 수도 있음
+  // 🔥 [NEW] 사용자에게 다음 행동 안내
+  toastType.value = 'info'; // 🔥 [NEW] Set toast type to info
+  timeoutToastMessage.value = "🎯 추리할 상대방의 카드를 선택하세요!";
+  showTimeoutToast.value = true;
+  setTimeout(() => {
+    showTimeoutToast.value = false;
+  }, 3000);
 }
 
 function handlePassTurn() {
@@ -592,11 +664,32 @@ function closePlayerInfo() {
 
 // 🔥 [추가] 게임 정산 결과 핸들링
 function handlePayoutResult(results: any[]) {
-  if (!me.value) return;
-  const myData = results.find(r => r.uid === me.value.uid);
+  console.log("💰 [GameView] handlePayoutResult received:", results);
+  
+  let myData = null;
+  
+  // 1. Try matching by 'me.value.uid'
+  if (me.value) {
+    myData = results.find(r => r.uid === me.value.uid);
+  } 
+  // 2. Fallback: Try matching by auth.currentUser.uid
+  else if (auth.currentUser) {
+    myData = results.find(r => r.uid === auth.currentUser!.uid);
+  }
+
   if (myData) {
+    console.log("💰 [GameView] Found my result:", myData);
     myPayoutResult.value = myData;
     showGameOverModal.value = true;
+  } else {
+    console.warn("⚠️ [GameView] Could not find my payout result.");
+    
+    // 3. Last resort: If I am exiting and there's a result, assume it's mine
+    if (isExiting.value && results.length > 0) {
+        console.log("   - Assuming first result is mine since I am exiting.");
+        myPayoutResult.value = results[0];
+        showGameOverModal.value = true;
+    }
   }
 }
 
@@ -606,113 +699,150 @@ function handleGameOverClose() {
   router.replace("/platform"); // 🔥 플랫폼 화면으로 이동
 }
 
-// 🔥 [수정] 나가기 버튼 핸들러 (라우터 가드와 로직 공유)
+// 🔥 [수정] 나가기 버튼 핸들러 (명시적 처리)
 function handleExitRoom() {
-  // router.push를 호출하면 onBeforeRouteLeave가 트리거됨
-  router.replace("/platform"); // 🔥 플랫폼 화면으로 이동
+  if (phase.value === 'INIT' || phase.value === 'GAME_OVER') {
+    router.replace("/platform");
+    return;
+  }
+
+  if (confirm("정말 나가시겠습니까? 게임이 진행 중이라면 패배 처리되며 베팅 금액을 잃습니다.")) {
+    console.log("🚪 [GameView] User initiated leave game.");
+    
+    // 1. 서버에 나가기 요청
+    socket.emit("leave_game", { roomId });
+    
+    // 2. 이탈 플래그 설정 (라우터 가드 통과용)
+    isExiting.value = true;
+
+    // 3. 로딩 표시 또는 대기 (서버 응답 대기)
+    // 여기서 바로 이동하지 않고, game:payout_result 이벤트를 기다림
+    // 단, 서버 응답이 없을 경우를 대비해 타임아웃 설정
+    setTimeout(() => {
+        if (isExiting.value && !showGameOverModal.value) {
+            console.warn("⚠️ [GameView] Leave timeout. Forcing exit.");
+            router.replace("/platform");
+        }
+    }, 3000);
+  }
 }
 
-// 🔥 [추가] 라우터 가드 (뒤로가기 및 나가기 버튼 공통 처리)
+// 🔥 [추가] 라우터 가드 (뒤로가기 등 브라우저 네비게이션 방어)
 onBeforeRouteLeave((to, from, next) => {
-  // 1. 이미 종료 모달이 떠있거나, 게임이 끝난 상태라면 바로 이동
-  if (!isExiting.value && showGameOverModal.value) {
+  // 1. 의도된 종료(나가기 버튼)이거나, 게임이 끝난 상태라면 통과
+  if (isExiting.value || showGameOverModal.value) {
     next();
     return;
   }
 
-  // 2. 게임 진행 중이 아니라면 바로 이동 (예: 로딩 중 등)
+  // 2. 게임 진행 중이 아니라면 통과
   if (phase.value === 'INIT' || phase.value === 'GAME_OVER') {
     next();
     return;
   }
 
-  // 3. 사용자 확인
-  if (confirm("정말 나가시겠습니까? 게임이 진행 중이라면 패배 처리되며 베팅 금액을 잃습니다.")) {
-    // 4. 서버에 나가기 요청
+  // 3. 브라우저 뒤로가기/새로고침 등
+  if (confirm("정말 나가시겠습니까? 게임이 진행 중이라면 패배 처리됩니다.")) {
     socket.emit("leave_game", { roomId });
-    
-    // 5. 이동 취소 (모달을 띄워야 하므로)
     isExiting.value = true;
-    next(false);
-    
-    // 6. 서버로부터 game:payout_result가 오면 모달이 뜸 -> 모달 닫기 버튼으로 다시 이동 시도
+    next();
   } else {
-    // 취소 시 이동 안 함
     next(false);
   }
 });
 
 
-onMounted(() => {
-  mySid.value = socket.id ?? null;
-  socket.on("state_update", handleStateUpdate);
-  socket.on("game:turn_phase_start", handleTurnPhaseStart);
-  socket.on("game:guess_result", handleGuessResult);
-  socket.on("game:guess_attempt", handleGuessAttempt);
-  
-  socket.on("game:payout_result", handlePayoutResult);
 
-  socket.on("game:start_guess_animation", handleStartGuessAnimation);
-  socket.on("game:prompt_continue", handlePromptContinue);
-  
-  socket.on("game:player_eliminated", (data) => {
-    console.log("💀 Player Eliminated:", data);
-    socket.emit("request_game_state", { roomId });
-  });
-});
-
-// 🔥 [FIX] Move logic to a separate async function or use the existing imports
-import { auth, db } from "../firebase"; // Ensure this is imported at top
-import { doc, getDoc } from "firebase/firestore";
-
-// ... (existing imports)
 
 onMounted(async () => {
+  // 🔥 [FIX] Restore redirect on refresh (User Request)
+  // Use a volatile global flag OR gameEntryGuard to detect if this is a fresh load (refresh) vs SPA navigation
+  const isSPA = (window as any).isGameEntryValid || gameEntryGuard.allowed;
+  console.log("🛡️ [GameView] Entry Check:", { isGameEntryValid: (window as any).isGameEntryValid, gameEntryGuard: gameEntryGuard.allowed });
+
+  if (!isSPA) {
+    alert("새로고침하여 게임에서 나갑니다.");
+    router.replace('/platform');
+    return;
+  }
+  // Reset flag
+  (window as any).isGameEntryValid = false;
+
+  // The backend handles validation and state synchronization.
+  console.log("🛡️ [GameView] Mounting component...");
+
   mySid.value = socket.id ?? null;
   
   // ... (socket listeners) ...
+  // 🔥 [DEBUG] 모든 소켓 이벤트 로깅
+  socket.onAny((event, ...args) => {
+    console.log(`📥 [Socket] ${event}`, args);
+  });
+
   socket.on("state_update", handleStateUpdate);
+  socket.on("room_state", handleStateUpdate); // 🔥 [FIX] Listen to room_state for lobby updates
   socket.on("game:turn_phase_start", handleTurnPhaseStart);
   socket.on("game:guess_result", handleGuessResult);
   socket.on("game:guess_attempt", handleGuessAttempt);
   socket.on("game:payout_result", handlePayoutResult);
-  socket.on("game:start_guess_animation", handleStartGuessAnimation);
+  socket.on("game:start_guess_animation", (data) => {
+    // 🔥 [NEW] Stop timer during animation
+    if (timerInterval) clearInterval(timerInterval);
+    handleStartGuessAnimation(data);
+  });
   socket.on("game:prompt_continue", handlePromptContinue);
   socket.on("game:player_eliminated", (data) => {
+    console.log("💀 [GameView] Player Eliminated:", data);
+    
+    // 🔥 [NEW] 탈락 알림 토스트
+    toastType.value = 'error';
+    timeoutToastMessage.value = `💀 ${data.nickname} 님이 탈락했습니다! (순위: ${data.rank}위)`;
+    showTimeoutToast.value = true;
+    setTimeout(() => {
+        showTimeoutToast.value = false;
+    }, 4000);
+
     socket.emit("request_game_state", { roomId });
+    socket.emit("request_game_state", { roomId });
+
+    // 🔥 [FIX] 즉시 로컬 상태 업데이트 (UI 반응성 향상)
+    const eliminatedPlayer = players.value.find(p => p.uid === data.uid);
+    if (eliminatedPlayer) {
+        eliminatedPlayer.isEliminated = true;
+        // 모든 카드 공개 처리 (시각적)
+        eliminatedPlayer.hand.forEach((card: any) => card.revealed = true);
+    }
   });
 
-  // 🔥 [FIX] Re-join room logic
+  // 🔥 [NEW] 게임 종료 이벤트 리스너 (명시적 종료 처리)
+  socket.on("game_over", (data) => {
+    console.log("🏆 [GameView] Game Over:", data);
+    // payout_result가 먼저 오겠지만, 혹시 모르니 여기서도 모달 트리거 가능
+    // 하지만 보통 payout_result에서 처리하므로 여기서는 로그만 찍거나
+    // 필요하다면 showGameOverModal.value = true; 를 할 수 있음
+    // (중복 실행 방지를 위해 체크)
+    if (!showGameOverModal.value) {
+        console.log("   - Triggering Game Over Modal from game_over event");
+        showGameOverModal.value = true;
+    }
+  });
+
+  // 🔥 [NEW] Add beforeunload listener
+  window.addEventListener("beforeunload", handleBeforeUnload);
+
+  // 🔥 [FIX] 재접속 로직 제거 (새로고침 시 튕겨내므로 불필요)
+  // 대신 현재 유저 정보만 로드
   const unsubscribe = auth.onAuthStateChanged(async (user) => {
     if (user) {
-      // Load user info to send to server (important for reconnect)
-      let nickname = user.displayName || "Guest";
-      let major = "";
-      let year = 0;
-      let money = 0;
-
+      // 그냥 유저 정보만 로드해둠 (혹시 모를 사용처 대비)
       try {
         const snap = await getDoc(doc(db, "users", user.uid));
         if (snap.exists()) {
-          const d = snap.data();
-          nickname = d.nickname || nickname;
-          major = d.major || "";
-          year = d.year || 0;
-          money = d.money || 0;
+          // 필요한 경우 로컬 상태 업데이트
         }
       } catch (e) {
-        console.error("Failed to load profile for reconnect:", e);
+        console.error("Failed to load profile:", e);
       }
-
-      console.log("🔄 Re-entering room:", roomId);
-      socket.emit("enter_room", {
-        roomId,
-        uid: user.uid,
-        nickname,
-        major,
-        year,
-        money
-      });
     }
   });
 
@@ -738,13 +868,11 @@ onUnmounted(() => {
 function handleBeforeUnload(e: BeforeUnloadEvent) {
   if (phase.value !== 'INIT' && phase.value !== 'GAME_OVER') {
     e.preventDefault();
-    e.returnValue = ''; // Chrome requires returnValue to be set
+    e.returnValue = '게임 중 새로고침하거나 나가면 패배 처리되며 베팅 금액을 모두 잃습니다.';
   }
 }
 
-onMounted(() => {
-  window.addEventListener("beforeunload", handleBeforeUnload);
-});
+
 </script>
 
 <style scoped>
@@ -925,5 +1053,46 @@ onMounted(() => {
 
 .exit-btn .icon {
   font-size: 1.2rem;
+}
+
+/* 🔥 [NEW] Toast Styles */
+.timeout-toast {
+  position: absolute;
+  top: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 24px;
+  border-radius: 50px;
+  color: white;
+  font-weight: bold;
+  font-size: 1rem;
+  z-index: 1000;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+  backdrop-filter: blur(5px);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.timeout-toast.error {
+  background: rgba(255, 71, 87, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.timeout-toast.info {
+  background: rgba(30, 144, 255, 0.9); /* DodgerBlue */
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.toast-enter-active,
+.toast-leave-active {
+  transition: all 0.3s ease;
+}
+
+.toast-enter-from,
+.toast-leave-to {
+  opacity: 0;
+  transform: translate(-50%, -20px);
 }
 </style>
