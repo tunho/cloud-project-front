@@ -24,7 +24,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from "vue";
 import { useRoute, useRouter, onBeforeRouteLeave } from "vue-router";
-import { socket } from "../socket";
+import { socket, gameEntryGuard } from "../socket";
 import { auth, db } from "../firebase";
 import { doc, getDoc } from "firebase/firestore";
 
@@ -41,6 +41,7 @@ const queueMax = ref(4);
 const major = ref("");
 const year = ref(0);
 const money = ref(0);
+const isMatched = ref(false); // 🔥 [NEW] 매칭 성공 여부 (Top Level)
 
 // -------------------------
 // 사용자 정보 로드
@@ -98,9 +99,14 @@ onMounted(() => {
 
   const betAmount = parseInt(route.query.bet as string) || 0; 
 
+
+
   socket.off("match:success");
   socket.on("match:success", ({ roomId }) => {
     clearInterval(timer);
+    isMatched.value = true; // 🔥 [NEW] 매칭 성공 플래그 설정
+    gameEntryGuard.allowed = true;
+    (window as any).isGameEntryValid = true; // 🔥 [NEW] Set valid entry flag
     router.replace(`/room/${roomId}/play`); 
   });
 
@@ -138,9 +144,12 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  socket.emit("leave_queue");
+  if (!isMatched.value) { // 🔥 [NEW] 매칭 성공 시에는 대기열 이탈 요청 안 함
+    socket.emit("leave_queue");
+  }
   clearInterval(timer);
   window.removeEventListener("beforeunload", handleBeforeUnload);
+  socket.off("match:success"); // 🔥 [NEW] 리스너 해제
 });
 </script>
 

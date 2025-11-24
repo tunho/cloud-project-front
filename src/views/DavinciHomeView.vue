@@ -1,7 +1,7 @@
 <template>
   <div class="lobby-wrapper">
     <div v-if="isLoading" class="loading-overlay">
-      <div class="spinner"></div>
+
     </div>
     <div v-else class="user-profile-section">
       <UserProfile />
@@ -23,7 +23,7 @@
         <button class="action-btn betting-match-premium" @click="openBettingModal">
           <div class="btn-gradient-border"></div>
           <div class="btn-content">
-            <span class="btn-icon">💎</span>
+            <span class="btn-icon">🎲</span>
             <div class="text-group">
               <span class="btn-title">배팅 매치</span>
               <span class="btn-subtitle">승부를 걸어보세요</span>
@@ -49,7 +49,7 @@
     <div v-if="showBettingModal" class="modal-overlay-premium" @click.self="closeBettingModal">
       <div class="modal-content-premium">
         <div class="modal-header">
-          <div class="modal-icon">💰</div>
+          <div class="modal-icon">🎲</div>
           <h2>배팅 금액 설정</h2>
           <p class="modal-subtitle">승부를 걸 금액을 선택하세요</p>
         </div>
@@ -100,11 +100,10 @@
 
         <p v-if="errorMessage" class="error-message-premium">⚠️ {{ errorMessage }}</p>
 
-        <div class="modal-footer">
-          <button class="modal-btn cancel" @click="closeBettingModal">취소</button>
-          <button class="modal-btn confirm" @click="confirmBetting">
-            <span class="btn-text">매칭 시작</span>
-            <span class="btn-shine"></span>
+        <div class="modal-actions">
+          <button class="cancel-btn" @click="closeBettingModal">취소</button>
+          <button class="confirm-btn" @click="confirmBetting" :disabled="!isValidBet">
+            매칭 시작
           </button>
         </div>
       </div>
@@ -114,9 +113,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
-import { socket } from "../socket";
+import { socket, gameEntryGuard } from "../socket";
 import UserProfile from "../components/UserProfile.vue";
 import { auth, db } from "../firebase";
 import { onAuthStateChanged } from "firebase/auth";
@@ -133,6 +132,15 @@ const errorMessage = ref("");
 const nickname = ref("Guest");
 const userProfile = ref({ major: "", year: 0 }); // 🔥 [FIX] Store profile data
 const isLoading = ref(true); // 🔥 [추가] 로딩 상태
+
+// 🔥 [NEW] Computed Property for Betting Validation
+const isValidBet = computed(() => {
+  return (
+    betAmount.value >= 10 &&
+    betAmount.value <= currentMoney.value &&
+    Number.isInteger(betAmount.value)
+  );
+});
 
 function openBettingModal() {
   betAmount.value = Math.min(1000, currentMoney.value); // 기본값 설정, 보유 금액 초과하지 않도록
@@ -152,6 +160,17 @@ function setMaxBet() {
   betAmount.value = currentMoney.value;
 }
 
+// 🔥 [FIX] 보유 금액이 로드되면 배팅 금액 범위 재설정
+import { watch } from "vue";
+watch(currentMoney, (newVal) => {
+  if (betAmount.value > newVal) {
+    betAmount.value = newVal;
+  }
+  if (betAmount.value === 0 && newVal > 0) {
+    betAmount.value = Math.min(1000, newVal);
+  }
+});
+
 function confirmBetting() {
   if (!betAmount.value || betAmount.value <= 0) {
     errorMessage.value = "배팅 금액을 입력해주세요.";
@@ -166,18 +185,11 @@ function confirmBetting() {
     return;
   }
 
-  // 매칭 시작
-  socket.emit("join_queue", {
-    uid: currentUid.value,
-    nickname: nickname.value,
-    major: userProfile.value.major || "", // 🔥 [FIX] Send major
-    year: userProfile.value.year || 0,   // 🔥 [FIX] Send year
-    money: currentMoney.value,
-    betAmount: betAmount.value
-  });
+  // 매칭 시작: 소켓 전송은 MatchingView에서 처리하도록 위임 (중복 전송 방지)
+  // socket.emit("join_queue", ...); 
   
   closeBettingModal();
-  router.push("/matching"); // 매칭 페이지로 이동
+  router.push({ path: "/matching", query: { bet: betAmount.value.toString() } }); // 🔥 [FIX] Pass bet amount
 }
 
 // 커스텀 매치 페이지로 이동
@@ -193,6 +205,7 @@ function goBack() {
 
 socket.on("match:success", (data) => {
   // data = { roomId, opponent }
+  (window as any).isGameEntryValid = true; // 🔥 [NEW] Set valid entry flag
   router.push(`/room/${data.roomId}/play`);
 });
 
@@ -213,6 +226,10 @@ onMounted(() => {
       router.push("/login");
     }
   });
+});
+
+onUnmounted(() => {
+  socket.off("match:success");
 });
 </script>
 

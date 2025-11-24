@@ -68,7 +68,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from "vue";
 import { useRouter, useRoute, onBeforeRouteLeave } from "vue-router";
-import { socket } from "../socket";
+import { socket, gameEntryGuard } from "../socket";
 import { auth, db } from "../firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
@@ -146,6 +146,8 @@ function onRoomState(data: any) {
 function onGameStarted(data: any) {
   if (data.roomId === roomId) {
     gameHasStarted.value = true;
+    gameEntryGuard.allowed = true; // 🔥 [NEW] 입장 허용
+    (window as any).isGameEntryValid = true; // 🔥 [NEW] Set valid entry flag
     router.replace(`/room/${roomId}/play`); // 🔥 [수정] replace로 변경 (대기방을 히스토리에서 제거)
   }
 }

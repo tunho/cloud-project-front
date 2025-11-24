@@ -32,7 +32,7 @@
         <!-- 🔥 [추가] 베팅 금액 표시 -->
         <div class="info-item" v-if="player?.betAmount">
           <span class="label">베팅 금액</span>
-          <span class="value money">🎲 {{ player?.betAmount?.toLocaleString() ?? 0 }}원</span>
+          <span class="value money">⛃ {{ player?.betAmount?.toLocaleString() ?? 0 }}원</span>
         </div>
       </div>
     </div>
