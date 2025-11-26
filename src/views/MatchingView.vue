@@ -238,27 +238,30 @@ h1 {
 }
 
 .cancel-btn {
-  background: linear-gradient(45deg, #ff6b6b, #e53935); /* 붉은색 그라데이션 */
-  color: white;
-  border: none;
-  padding: 16px 30px; /* 패딩 키움 */
-  border-radius: 12px; /* 둥근 모서리 */
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 12px 30px;
+  border-radius: 30px;
   cursor: pointer;
-  font-size: 1.1rem; /* 폰트 크기 키움 */
-  font-weight: bold;
-  box-shadow: 0 5px 15px rgba(229, 57, 53, 0.4); /* 그림자 */
+  font-size: 1rem;
+  font-weight: 600;
+  backdrop-filter: blur(10px);
   transition: all 0.3s ease;
   letter-spacing: 0.5px;
+  margin-top: 20px;
 }
 
 .cancel-btn:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 8px 20px rgba(229, 57, 53, 0.6);
-  background: linear-gradient(45deg, #ff8a80, #ff5252);
+  background: rgba(255, 71, 87, 0.15);
+  border-color: #ff4757;
+  color: #ff4757;
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(255, 71, 87, 0.2);
 }
 
 .cancel-btn:active {
   transform: translateY(0);
-  box-shadow: 0 3px 10px rgba(229, 57, 53, 0.4);
+  box-shadow: none;
 }
 </style>

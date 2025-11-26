@@ -249,12 +249,24 @@ const circleStyle = computed(() => {
 // 로직 함수 (이전 코드와 동일)
 // -----------------------------
 function startLocalTimer(sec: number) {
+  console.log(`⏱️ [startLocalTimer] Request to start timer: ${sec}s`);
+  
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+  
   timeLeft.value = sec;
-  if (timerInterval) clearInterval(timerInterval);
+  
   timerInterval = window.setInterval(() => {
     timeLeft.value -= 1;
-    if (timeLeft.value <= 0) clearInterval(timerInterval!);
+    // console.log(`⏱️ [Timer Tick] ${timeLeft.value}s`);
+    if (timeLeft.value <= 0) {
+      if (timerInterval) clearInterval(timerInterval);
+    }
   }, 1000);
+  
+  console.log(`⏱️ [startLocalTimer] Timer started with interval ID: ${timerInterval}`);
 }
 
 function pickColor(payload: { color: "black" | "white", event: MouseEvent } | "black" | "white") {
@@ -368,6 +380,7 @@ interface FlyingCardItem {
   color: "black" | "white";
   targetDomId: string;
 }
+
 const flyingCards = ref<FlyingCardItem[]>([]);
 
 function triggerCardAnimation(p: any, newCard: any, newCardIndex: number) {
@@ -437,6 +450,7 @@ function handleTurnPhaseStart(data: any) {
   
   // 🔥 [NEW] 타임아웃 알림
   if (data.reason === 'timeout') {
+    console.log("⏰ Timeout reason detected!");
     const turnPlayer = players.value.find(p => p.uid === data.currentTurnUid);
     if (turnPlayer) {
       toastType.value = 'error'; // 🔥 [NEW] Set toast type to error
@@ -445,6 +459,15 @@ function handleTurnPhaseStart(data: any) {
       setTimeout(() => {
         showTimeoutToast.value = false;
       }, 3000);
+    }
+  }
+
+  // 🔥 [FIX] Update currentTurn immediately if UID is provided
+  if (data.currentTurnUid) {
+    const turnPlayer = players.value.find(p => p.uid === data.currentTurnUid);
+    if (turnPlayer) {
+      console.log(`🔄 [handleTurnPhaseStart] Updating currentTurn to ${turnPlayer.nickname} (${turnPlayer.id})`);
+      currentTurn.value = turnPlayer.id;
     }
   }
 

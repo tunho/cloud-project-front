@@ -48,6 +48,9 @@
     <!-- 🔥 [Enhanced] 배팅 금액 입력 모달 -->
     <div v-if="showBettingModal" class="modal-overlay-premium" @click.self="closeBettingModal">
       <div class="modal-content-premium">
+        <!-- 🔥 [NEW] Close Button -->
+        <button class="close-modal-btn" @click="closeBettingModal">×</button>
+
         <div class="modal-header">
           <div class="modal-icon">🎲</div>
           <h2>배팅 금액 설정</h2>
@@ -101,15 +104,17 @@
         <p v-if="errorMessage" class="error-message-premium">⚠️ {{ errorMessage }}</p>
 
         <div class="modal-actions">
-          <button class="cancel-btn" @click="closeBettingModal">취소</button>
+          <!-- 🔥 [FIX] Cancel button removed, Confirm button centered -->
           <button class="confirm-btn" @click="confirmBetting" :disabled="!isValidBet">
             매칭 시작
           </button>
         </div>
       </div>
     </div>
-
   </div>
+
+
+
 </template>
 
 <script setup lang="ts">
@@ -529,6 +534,25 @@ onUnmounted(() => {
   to { transform: scale(1) translateY(0); opacity: 1; }
 }
 
+/* 🔥 [NEW] Close Button */
+.close-modal-btn {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 2rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.3s ease;
+  z-index: 10;
+}
+
+.close-modal-btn:hover {
+  color: white;
+}
+
 .modal-header {
   text-align: center;
   margin-bottom: 2rem;
@@ -697,44 +721,39 @@ onUnmounted(() => {
 }
 
 /* Modal Footer */
-.modal-footer {
-  display: grid;
-  grid-template-columns: 1fr 2fr;
-  gap: 1rem;
+.modal-actions {
+  display: flex;
+  justify-content: center; /* 🔥 [FIX] Center the button */
+  margin-top: 24px;
 }
 
-.modal-btn {
-  padding: 1.2rem;
+.confirm-btn {
+  width: auto; /* 🔥 [FIX] Auto width for better centering */
+  min-width: 200px; /* 🔥 [FIX] Min width for touch targets */
+  padding: 16px 40px;
+  background: linear-gradient(135deg, #f093fb, #f5576c);
   border: none;
   border-radius: 15px;
-  font-weight: 700;
-  font-size: 1rem;
+  color: white;
+  font-weight: 800;
+  font-size: 1.1rem;
   cursor: pointer;
+  box-shadow: 0 5px 15px rgba(245, 87, 108, 0.4);
   transition: all 0.3s ease;
-  position: relative;
-  overflow: hidden;
 }
 
-.modal-btn.cancel {
-  background: rgba(255, 255, 255, 0.08);
-  color: white;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-}
-
-.modal-btn.cancel:hover {
-  background: rgba(255, 255, 255, 0.15);
-}
-
-.modal-btn.confirm {
-  background: linear-gradient(135deg, #f093fb, #f5576c);
-  color: white;
-  box-shadow: 0 5px 20px rgba(245, 87, 108, 0.4);
-}
-
-.modal-btn.confirm:hover {
+.confirm-btn:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(245, 87, 108, 0.6);
+  box-shadow: 0 10px 30px rgba(245, 87, 108, 0.6);
 }
+
+.confirm-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
 
 .btn-shimmer {
   position: absolute;

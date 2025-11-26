@@ -40,40 +40,45 @@
         :id="`player-${player.id}-tile-${index}`"
         class="tile"
         :class="{
-          black: t.color === 'black',
-          white: t.color === 'white',
+          'flipped': t.revealed || isMe,
           'new-tile-highlight': t.isNew,
-          'interactable-tile': isInteractable && !t.revealed,
-          'my-revealed': isMe && t.revealed
+          'interactable-tile': isInteractable && !t.revealed
         }"
         @click="handleTileClick(index)"
       >
-
-        <div class="tile-content" :class="{ 'content-pulse': t.isNew }">
-          <template v-if="isMe">
-            <span v-if="t.isJoker" class="joker">★</span>
-            <span v-else class="number">{{ t.value }}</span>
-            
-            <!-- 🔥 [추가] 내 카드가 공개되었을 때 표시 -->
-            <div v-if="t.revealed" class="revealed-overlay">
-              <div class="eye-icon">👁️</div>
+        <div class="tile-inner">
+            <!-- 🔥 [FIX] Front Face (The Number/Joker) -->
+            <div class="tile-face tile-front" :class="{
+                black: t.color === 'black',
+                white: t.color === 'white',
+                'my-revealed': isMe && t.revealed
+            }">
+                <div class="tile-content" :class="{ 'content-pulse': t.isNew }">
+                    <span v-if="t.isJoker" class="joker">★</span>
+                    <span v-else class="number">{{ t.value }}</span>
+                    
+                    <!-- 내 카드가 공개되었을 때 표시 -->
+                    <div v-if="isMe && t.revealed" class="revealed-overlay">
+                        <div class="eye-icon">👁️</div>
+                    </div>
+                </div>
             </div>
-          </template>
 
-          <template v-else>
-            <template v-if="t.revealed">
-              <span v-if="t.isJoker" class="joker">★</span>
-              <span v-else class="number">{{ t.value }}</span>
-            </template>
-            <span v-else class="hidden">?</span>
-          </template>
+            <!-- 🔥 [FIX] Back Face (Hidden) -->
+            <div class="tile-face tile-back" :class="{
+                black: t.color === 'black',
+                white: t.color === 'white'
+            }">
+                <div class="tile-content">
+                    <span class="hidden">?</span>
+                </div>
+                <div class="chain-lock-overlay" v-if="!isMe">
+                    <div class="padlock-icon"></div>
+                </div>
+            </div>
         </div>
 
         <div v-if="t.isNew" class="new-card-glow"></div>
-
-        <div class="chain-lock-overlay" v-if="!t.revealed && !isMe">
-          <div class="padlock-icon"></div>
-        </div>
 
       </div>
     </div>
@@ -237,49 +242,82 @@ const isEliminated = computed(() => {
 .tile {
   width: 60px;
   height: 90px;
+  position: relative;
+  perspective: 1000px; /* 3D 효과를 위한 원근감 */
+  background: transparent; /* 컨테이너는 투명 */
+  border: none;
+  box-shadow: none;
+}
+
+/* 🔥 [NEW] 3D Flip Inner Container */
+.tile-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  text-align: center;
+  transition: transform 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275); /* Bouncy transition */
+  transform-style: preserve-3d;
+}
+
+/* 🔥 [NEW] Flip State */
+.tile.flipped .tile-inner {
+  transform: rotateY(180deg);
+}
+
+/* 🔥 [NEW] Front and Back Faces */
+.tile-face {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden; /* 뒷면 숨김 */
   border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  position: relative;
-  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-  transform-style: preserve-3d;
   box-shadow: 
     0 4px 8px rgba(0,0,0,0.5),
     0 1px 3px rgba(0,0,0,0.3);
 }
 
-/* Black Tile */
-.tile.black {
-  background: #1a1a1a; /* 완전 검정보다 살짝 밝게하여 입체감 */
+/* Front Face (Number/Joker) - Rotated 180deg initially so it's hidden */
+.tile-front {
+  transform: rotateY(180deg);
+}
+
+/* Back Face (Hidden/?) - Default visible face */
+.tile-back {
+  transform: rotateY(0deg);
+}
+
+
+/* Black Tile Styles */
+.tile-face.black {
+  background: #1a1a1a; 
   border: 1px solid #444;
   color: #ffd700;
   background: linear-gradient(145deg, #2b2b2b, #101010);
 }
 
-/* 🔥 [수정] White Tile: 뒤집힌 상태에서도 완벽한 흰색 유지 */
-.tile.white {
-  background: #ffffff; /* 기본 배경을 순백색으로 */
-  /* 아주 미세한 그라데이션으로 입체감만 줌 (회색톤 제거) */
+/* White Tile Styles */
+.tile-face.white {
+  background: #ffffff; 
   background: linear-gradient(135deg, #ffffff 0%, #f8f8f8 100%);
-  border: 2px solid #ffffff; /* 테두리도 흰색 */
+  border: 2px solid #ffffff; 
   color: #222;
-
-  /* 흰색이 배경에 묻히지 않도록 그림자 강조 */
   box-shadow: 
     0 5px 15px rgba(0,0,0,0.5), 
-    inset 0 0 0 1px rgba(200,200,200, 0.3); /* 내부 얇은 라인으로 형태 구분 */
+    inset 0 0 0 1px rgba(200,200,200, 0.3);
 }
 
-/* Hidden Tile (Back) */
+/* Hidden Tile (Back) Content */
 .hidden { font-size: 0; }
-.tile .hidden::after {
+.tile-back .hidden::after {
   content: '?';
   font-size: 24px;
   font-weight: 900;
-  color: rgba(0,0,0,0.2); /* 물음표 색상도 연하게 */
+  color: rgba(0,0,0,0.2); 
 }
-.tile.black .hidden::after {
+.tile-face.black .hidden::after {
   color: rgba(255,255,255,0.2);
 }
 
@@ -289,22 +327,30 @@ const isEliminated = computed(() => {
 .bottomHand .tile {
   width: 80px;
   height: 120px;
+}
+.bottomHand .tile-face {
   border-radius: 12px;
 }
-.bottomHand .tile:hover {
-  transform: translateY(-10px);
-  z-index: 10;
+.bottomHand .tile:hover .tile-inner {
+  transform: translateY(-10px) rotateY(180deg); /* Hover 시 위로 올라가면서 뒤집힌 상태 유지 */
 }
+/* 내 카드는 항상 뒤집혀 있음 (flipped 클래스 적용됨) */
+.bottomHand .tile.flipped:hover .tile-inner {
+    transform: translateY(-10px) rotateY(180deg);
+}
+
 
 /* -----------------------------
    인터랙션 모드
 ----------------------------- */
 .interactable-tile { cursor: pointer; }
-.interactable-tile:hover {
+.interactable-tile:hover .tile-inner {
   transform: translateY(-15px) scale(1.1) !important;
-  z-index: 100;
-  box-shadow: 0 0 20px rgba(255, 215, 0, 0.8), 0 15px 30px rgba(0,0,0,0.6);
-  border-color: #ffd700 !important;
+  /* z-index는 부모(.tile)에서 처리해야 함, transform context 때문에 */
+}
+.interactable-tile:hover .tile-face {
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.8), 0 15px 30px rgba(0,0,0,0.6);
+    border-color: #ffd700 !important;
 }
 
 /* -----------------------------
@@ -335,13 +381,14 @@ const isEliminated = computed(() => {
   z-index: 0; /* 카드 뒤로 가도록? 아니면 겹치지 않게? 일단 0 */
   opacity: 1;
   filter: drop-shadow(0 1px 2px rgba(0,0,0,0.8));
-  
-  /* 기본적으로 가로 라인 */
+}
+
+/* 가로 화살표 (기본) */
+.arrow-container.horizontal {
   left: 0; width: 100%; height: 2px;
 }
 
-/* 화살표 라인 */
-.arrow-container .line {
+.arrow-container.horizontal .line {
   position: absolute;
   top: 50%; left: 0; width: 100%; height: 2px;
   transform: translateY(-50%);
@@ -353,14 +400,11 @@ const isEliminated = computed(() => {
   position: absolute;
   width: 14px; height: 14px;
   fill: #ffffff;
-  top: 50%; right: 0; 
-  transform: translateY(-50%);
 }
 
-.arrow-head.left {
-  right: auto;
-  left: 0;
-}
+/* Horizontal Heads */
+.arrow-head.right { top: 50%; right: 0; transform: translateY(-50%); }
+.arrow-head.left { top: 50%; left: 0; transform: translateY(-50%); }
 
 /* 위치 조정 (카드 그룹 기준) */
 .arrow-container.arrow-pos-top { top: -20px; }
@@ -372,7 +416,7 @@ const isEliminated = computed(() => {
 /* -----------------------------
    기타 효과
 ----------------------------- */
-.new-tile-highlight {
+.new-tile-highlight .tile-face {
   box-shadow: 0 0 15px #4CAF50, 0 0 5px #4CAF50 inset !important;
   border-color: #4CAF50 !important;
 }
@@ -414,10 +458,10 @@ const isEliminated = computed(() => {
 }
 
 @keyframes shake {
-  10%, 90% { transform: translate3d(-1px, 0, 0); }
-  20%, 80% { transform: translate3d(2px, 0, 0); }
-  30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
-  40%, 60% { transform: translate3d(4px, 0, 0); }
+  10%, 90% { transform: translate3d(-1px, 0, 0) rotateY(180deg); }
+  20%, 80% { transform: translate3d(2px, 0, 0) rotateY(180deg); }
+  30%, 50%, 70% { transform: translate3d(-4px, 0, 0) rotateY(180deg); }
+  40%, 60% { transform: translate3d(4px, 0, 0) rotateY(180deg); }
 }
 
 /* -----------------------------
@@ -494,22 +538,23 @@ const isEliminated = computed(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: linear-gradient(135deg, #ffd700, #fdb931);
+  background: rgba(0, 0, 0, 0.7); /* 🔥 [FIX] Dark background for contrast */
   padding: 4px 10px;
   border-radius: 12px;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
   margin-left: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.4);
+  border: 1px solid rgba(255, 215, 0, 0.5); /* 🔥 [FIX] Gold border */
   animation: pulse-gold 2s infinite;
 }
 
 .bet-icon {
   font-size: 0.9rem;
+  color: #ffd700; /* 🔥 [FIX] Gold icon */
 }
 
 .bet-value {
   font-weight: 800;
-  color: #5a4a00;
+  color: #ffffff; /* 🔥 [FIX] White text */
   font-size: 0.9rem;
   font-family: 'Roboto Mono', monospace;
 }

@@ -14,12 +14,18 @@
         
         <div class="form-group">
           <label>전공</label>
-          <input type="text" v-model="form.major" placeholder="전공을 입력하세요" />
+          <select v-model="form.major">
+            <option disabled value="">전공 선택</option>
+            <option v-for="m in majors" :key="m" :value="m">{{ m }}</option>
+          </select>
         </div>
         
         <div class="form-group">
           <label>학번</label>
-          <input type="number" v-model.number="form.year" placeholder="학번을 입력하세요 (예: 20)" />
+          <select v-model="form.year">
+            <option disabled value="">학번 선택</option>
+            <option v-for="y in yearList" :key="y" :value="y">{{ y }}학번</option>
+          </select>
         </div>
 
         <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
@@ -52,10 +58,15 @@ const props = defineProps<{
 
 const emit = defineEmits(['close', 'updated']);
 
+// 선택 옵션들 (SetupView와 동일)
+const majors = ["컴퓨터공학부", "소프트웨어공학과", "전자공학과", "컴퓨터인공지능학부"];
+// 🔥 [FIX] 00 ~ 25 학번 생성
+const yearList = Array.from({ length: 26 }, (_, i) => i.toString().padStart(2, '0'));
+
 const form = ref({
   nickname: '',
   major: '',
-  year: 0
+  year: '' // 문자열로 처리 (00, 01...)
 });
 
 const isSaving = ref(false);
@@ -63,7 +74,11 @@ const errorMessage = ref('');
 
 watch(() => props.isOpen, (newVal) => {
   if (newVal) {
-    form.value = { ...props.initialData };
+    form.value = { 
+      nickname: props.initialData.nickname,
+      major: props.initialData.major,
+      year: props.initialData.year ? props.initialData.year.toString().padStart(2, '0') : ''
+    };
     errorMessage.value = '';
   }
 });
@@ -82,10 +97,13 @@ async function saveProfile() {
     await updateDoc(userRef, {
       nickname: form.value.nickname,
       major: form.value.major,
-      year: form.value.year
+      year: parseInt(form.value.year) // 저장할 때는 숫자로
     });
     
-    emit('updated', form.value);
+    emit('updated', {
+      ...form.value,
+      year: parseInt(form.value.year)
+    });
     emit('close');
   } catch (e) {
     console.error("Profile update error:", e);
@@ -153,9 +171,12 @@ function close() {
   margin-bottom: 8px;
   color: #ccc;
   font-size: 0.9rem;
+  font-weight: 600;
 }
 
-.form-group input {
+/* 🔥 [FIX] Input & Select Styling */
+.form-group input,
+.form-group select {
   width: 100%;
   padding: 12px;
   background: #2a2a3a;
@@ -163,9 +184,11 @@ function close() {
   border-radius: 8px;
   color: #fff;
   font-size: 1rem;
+  transition: border-color 0.2s;
 }
 
-.form-group input:focus {
+.form-group input:focus,
+.form-group select:focus {
   border-color: #4CAF50;
   outline: none;
 }

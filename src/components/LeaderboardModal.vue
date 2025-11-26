@@ -12,6 +12,11 @@
         <p>랭킹 불러오는 중...</p>
       </div>
 
+      <div v-else-if="error" class="error-state">
+        <p>⚠️ 랭킹을 불러올 수 없습니다.</p>
+        <p class="error-detail">{{ error }}</p>
+      </div>
+
       <div v-else class="ranking-list">
         <div v-for="(user, index) in leaders" :key="user.uid" class="ranking-item" :class="{ 'top-rank': index < 3, 'me': user.uid === myUid }">
           <div class="rank-badge">
@@ -50,22 +55,30 @@ defineEmits(['close']);
 
 const leaders = ref<any[]>([]);
 const loading = ref(false);
+const error = ref<string | null>(null); // 🔥 [NEW] Error state
 const myUid = auth.currentUser?.uid;
 
 async function fetchLeaderboard() {
   loading.value = true;
+  error.value = null; // Reset error
   try {
-    console.log("🏆 [Leaderboard] Fetching data...");
-    // 🔥 [수정] 백엔드 API 호출로 변경
-    const response = await fetch("/api/leaderboard");
-    if (!response.ok) throw new Error("Failed to fetch leaderboard");
+    console.log("🏆 [Leaderboard] Fetching data from Firestore (Client SDK)...");
     
-    const data = await response.json();
-    console.log("🏆 [Leaderboard] Data received:", data);
+    // 🔥 [NEW] Direct Firestore Query via Client SDK
+    const usersRef = collection(db, "users");
+    const q = query(usersRef, orderBy("money", "desc"), limit(50));
+    const querySnapshot = await getDocs(q);
+    
+    const data: any[] = [];
+    querySnapshot.forEach((doc) => {
+      data.push(doc.data());
+    });
+
+    console.log(`🏆 [Leaderboard] ${data.length} records loaded.`);
     leaders.value = data;
-  } catch (error) {
-    console.error("Error fetching leaderboard:", error);
-    // Fallback or error state handling could go here
+  } catch (err: any) {
+    console.error("Error fetching leaderboard:", err);
+    error.value = err.message || "Unknown error"; // 🔥 [NEW] Capture error message
   } finally {
     loading.value = false;
   }
@@ -204,6 +217,19 @@ h2 {
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin: 0 auto 20px;
+}
+
+.error-state {
+  padding: 30px;
+  text-align: center;
+  color: #ff6b6b;
+}
+
+.error-detail {
+  font-size: 0.8rem;
+  color: #aaa;
+  margin-top: 10px;
+  word-break: break-all;
 }
 
 .close-btn {
