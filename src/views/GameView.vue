@@ -11,7 +11,7 @@
         <div v-if="seatMap[p.sid] === side" :class="side + (side === 'top' ? '-player' : '-zone')">
           <div :class="side === 'top' ? '' : side + '-hand'">
             <PlayerCard
-              :player="p"
+              :player="{ ...p, character: playerProfiles[p.uid]?.character }"
               :isMe="false"
               :active="p.id === currentTurn"
               :phase="phase"
@@ -68,7 +68,7 @@
     </div>
       <div class="my-hand">
         <PlayerCard
-          :player="me"
+          :player="{ ...me, character: playerProfiles[me?.uid]?.character }"
           :isMe="true"
           :active="me.id === currentTurn"
           :phase="phase"
@@ -144,7 +144,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useRoute, useRouter, onBeforeRouteLeave } from "vue-router";
 import { socket, gameEntryGuard } from "../socket";
 import { auth, db } from "../firebase"; // 🔥 [FIX] Added missing imports
@@ -231,6 +231,33 @@ const isTimerHidden = ref(false);
 
 // 🔥 [NEW] Toast State
 const toastType = ref<'error' | 'info'>('error');
+
+// 🔥 [NEW] Player Profiles Cache
+const playerProfiles = ref<Record<string, any>>({});
+
+// Watch players to fetch profiles
+watch(players, async (newPlayers) => {
+  for (const p of newPlayers) {
+    if (p.uid && !playerProfiles.value[p.uid]) {
+      // Mark as fetching to avoid duplicate requests
+      playerProfiles.value[p.uid] = { fetching: true };
+      try {
+        const snap = await getDoc(doc(db, 'users', p.uid));
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data.character) {
+            playerProfiles.value[p.uid] = { character: data.character };
+          } else {
+             delete playerProfiles.value[p.uid]; // No character data
+          }
+        }
+      } catch (e) {
+        console.error("Failed to fetch profile for", p.uid, e);
+        delete playerProfiles.value[p.uid];
+      }
+    }
+  }
+}, { deep: true });
 
 // -----------------------------
 // 계산 속성 (요약)

@@ -4,6 +4,25 @@
       
       <!-- 플레이어 정보 표시 (닉네임, 학과, 학번) -->
       <div class="player-info-badge" :class="side">
+        <!-- 🔥 [NEW] Avatar -->
+        <div class="player-avatar-container" v-if="player.character">
+          <CharacterAvatar 
+            :seed="player.character.seed"
+            :skinColor="player.character.skinColor"
+            :top="player.character.top"
+            :hairColor="player.character.hairColor"
+            :hatColor="player.character.hatColor"
+            :eyes="player.character.eyes"
+            :mouth="player.character.mouth"
+            :eyebrows="player.character.eyebrows"
+            :accessories="player.character.accessories"
+            :clothing="player.character.clothing"
+            :clothesColor="player.character.clothesColor"
+            :backgroundColor="player.character.backgroundColor"
+            :size="32"
+            mode="face"
+          />
+        </div>
         <div class="nickname-row">
           <span class="nickname">{{ player.nickname || player.name }}</span>
           <div class="bet-badge" v-if="player.betAmount != null">
@@ -87,6 +106,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import CharacterAvatar from "./CharacterAvatar.vue";
 
 const props = defineProps<{
   player: any;
@@ -469,17 +489,34 @@ const isEliminated = computed(() => {
 ----------------------------- */
 .player-info-badge {
   position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   background: rgba(0, 0, 0, 0.6);
   padding: 6px 12px;
-  border-radius: 12px;
+  border-radius: 15px;
   color: white;
-  text-align: center;
-  backdrop-filter: blur(4px);
-  border: 1px solid rgba(255,255,255,0.1);
-  z-index: 200; /* 🔥 [수정] 화살표(z-index:5)보다 훬씬 높게 */
+  font-size: 0.9rem;
   white-space: nowrap;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 6px rgba(0,0,0,0.3);
   transition: all 0.3s ease;
   pointer-events: auto;
+}
+
+.player-avatar-container {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.1);
+  margin-bottom: 2px;
 }
 
 .player-info-badge .nickname {
@@ -501,10 +538,11 @@ const isEliminated = computed(() => {
 }
 
 /* 위치별 배지 배치 */
-.player-info-badge.bottom { bottom: 140px; left: 50%; transform: translateX(-50%); }
-.player-info-badge.top { top: 110px; left: 50%; transform: translateX(-50%); }
-.player-info-badge.left { top: -80px; left: 50%; transform: translateX(-50%); } /* 🔥 [수정] 더 높게 이동 */
-.player-info-badge.right { top: -80px; left: 50%; transform: translateX(-50%); } /* 🔥 [수정] 더 높게 이동 */
+/* 위치별 배지 배치 */
+.player-info-badge.bottom { bottom: 170px; left: 50%; transform: translateX(-50%); }
+.player-info-badge.top { top: 140px; left: 50%; transform: translateX(-50%); }
+.player-info-badge.left { top: -110px; left: 50%; transform: translateX(-50%); } /* 🔥 [수정] 더 높게 이동 (화면상 오른쪽으로) */
+.player-info-badge.right { top: -110px; left: 50%; transform: translateX(-50%); } /* 🔥 [수정] 더 높게 이동 (화면상 왼쪽으로) */
 
 /* 탈락 상태 */
 .hand.eliminated {

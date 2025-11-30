@@ -69,7 +69,12 @@ async function loadUserProfile(uid: string) {
 function cancelMatch() {
   socket.emit("leave_queue");
   clearInterval(timer);
-  router.push("/davinci-home");
+  const gameType = (route.query.game as string) || 'davinci';
+  if (gameType === 'omok') {
+    router.push("/omok-home");
+  } else {
+    router.push("/davinci-home");
+  }
 }
 
 function startTimer() {
@@ -98,50 +103,42 @@ onMounted(() => {
   });
 
   const betAmount = parseInt(route.query.bet as string) || 0; 
+  const gameType = (route.query.game as string) || 'davinci';
+  console.log("🔥 MatchingView mounted. GameType:", gameType, "Bet:", betAmount);
 
-
+  const user = auth.currentUser;
+  if (user) {
+    loadUserProfile(user.uid).then(() => {
+      console.log("🚀 Emitting join_queue for", gameType);
+      socket.emit("join_queue", {
+        uid: user.uid,
+        name: user.displayName || "Guest",
+        nickname: nickname.value,
+        betAmount: betAmount,
+        major: major.value,
+        year: year.value,
+        money: money.value,
+        gameType: gameType
+      });
+    });
+  }
 
   socket.off("match:success");
   socket.on("match:success", ({ roomId }) => {
     clearInterval(timer);
-    isMatched.value = true; // 🔥 [NEW] 매칭 성공 플래그 설정
+    isMatched.value = true; 
     gameEntryGuard.allowed = true;
-    (window as any).isGameEntryValid = true; // 🔥 [NEW] Set valid entry flag
-    router.replace(`/room/${roomId}/play`); 
-  });
-
-  // 🔥 [FIX] Wait for Auth to be ready
-  const unsubscribe = auth.onAuthStateChanged(async (user) => {
-    if (user) {
-      await loadUserProfile(user.uid);
-      
-      console.log("🚀 Joining Queue with:", {
-        uid: user.uid,
-        nickname: nickname.value,
-        major: major.value,
-        year: year.value,
-        money: money.value,
-        betAmount
-      });
-
-      socket.emit("join_queue", {
-        uid: user.uid,
-        nickname: nickname.value,
-        major: major.value,
-        year: year.value,
-        money: money.value,
-        betAmount: betAmount 
-      });
+    (window as any).isGameEntryValid = true;
+    
+    if (gameType === 'omok') {
+        router.replace(`/room/${roomId}/omok`);
     } else {
-      console.warn("⚠️ No authenticated user found in MatchingView");
-      router.push("/"); // Redirect to login if not auth
+        router.replace(`/room/${roomId}/play`);
     }
   });
-
-  onUnmounted(() => {
-    unsubscribe();
-  });
 });
+
+
 
 onUnmounted(() => {
   if (!isMatched.value) { // 🔥 [NEW] 매칭 성공 시에는 대기열 이탈 요청 안 함
@@ -151,7 +148,11 @@ onUnmounted(() => {
   window.removeEventListener("beforeunload", handleBeforeUnload);
   socket.off("match:success"); // 🔥 [NEW] 리스너 해제
 });
+
+
 </script>
+
+
 
 <style scoped>
 .match-container {

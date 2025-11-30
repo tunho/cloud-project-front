@@ -137,18 +137,27 @@ function bindAuthListener() {
 // -------------------------
 // 소켓 이벤트 핸들러
 // -------------------------
+const gameType = ref('davinci'); // 🔥 [추가]
+
 function onRoomState(data: any) {
   players.value = data.players || [];
   const me = players.value.find((p: any) => p.uid === currentUid.value);
   if (me) isHost.value = me.id === 0;
+  if (data.gameType) gameType.value = data.gameType; // 🔥 [추가]
 }
 
 function onGameStarted(data: any) {
   if (data.roomId === roomId) {
     gameHasStarted.value = true;
-    gameEntryGuard.allowed = true; // 🔥 [NEW] 입장 허용
-    (window as any).isGameEntryValid = true; // 🔥 [NEW] Set valid entry flag
-    router.replace(`/room/${roomId}/play`); // 🔥 [수정] replace로 변경 (대기방을 히스토리에서 제거)
+    gameEntryGuard.allowed = true;
+    (window as any).isGameEntryValid = true;
+    
+    // 🔥 [수정] 게임 타입에 따라 라우팅 분기
+    if (gameType.value === 'omok') {
+        router.replace(`/room/${roomId}/omok`);
+    } else {
+        router.replace(`/room/${roomId}/play`);
+    }
   }
 }
 

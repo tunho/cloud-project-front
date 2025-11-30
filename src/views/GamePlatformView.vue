@@ -11,6 +11,14 @@
         <button class="ranking-btn" @click="openLeaderboard">
           <span class="icon">🏆</span> 랭킹
         </button>
+        <!-- 🔥 [NEW] 상점 버튼 -->
+        <button class="shop-btn" @click="goShop">
+          <span class="icon">🛍️</span> 상점
+        </button>
+        <!-- 🔥 [NEW] 꾸미기 버튼 -->
+        <button class="custom-btn" @click="goCustomization">
+          <span class="icon">👕</span> 꾸미기
+        </button>
       </div>
     </header>
 
@@ -34,12 +42,14 @@
           <div class="card-bg-glow"></div>
         </div>
 
-        <div class="game-card disabled">
+        <div class="game-card active" @click="goOmok">
           <div class="card-content">
-            <div class="game-icon">🔒</div>
-            <h3>Coming Soon</h3>
-            <p class="desc">새로운 게임이<br>준비 중입니다</p>
+            <div class="game-icon">⚫⚪</div>
+            <h3>Omok</h3>
+            <p class="desc">오목판 위의 치열한 두뇌 싸움<br>5목을 완성하세요</p>
+            <button class="play-btn">PLAY NOW</button>
           </div>
+          <div class="card-bg-glow"></div>
         </div>
       </div>
     </main>
@@ -61,8 +71,21 @@ import LeaderboardModal from "../components/LeaderboardModal.vue"; // 🔥 Impor
 const router = useRouter();
 const showLeaderboard = ref(false);
 
+
 function goDavinci() {
   router.push("/davinci-home");
+}
+
+function goOmok() {
+  router.push("/omok-home");
+}
+
+function goShop() {
+  router.push("/shop");
+}
+
+function goCustomization() {
+  router.push("/customization");
 }
 
 function openLeaderboard() {
@@ -300,6 +323,56 @@ body, html {
 }
 
 .ranking-btn .icon {
+  font-size: 1.1rem;
+}
+
+.shop-btn {
+  background: linear-gradient(135deg, #4285f4, #34a853);
+  border: none;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+  font-size: 0.9rem;
+  box-shadow: 0 4px 15px rgba(66, 133, 244, 0.3);
+  transition: all 0.3s ease;
+}
+
+.shop-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(66, 133, 244, 0.5);
+}
+
+.shop-btn .icon {
+  font-size: 1.1rem;
+}
+
+.custom-btn {
+  background: linear-gradient(135deg, #e91e63, #9c27b0);
+  border: none;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+  font-size: 0.9rem;
+  box-shadow: 0 4px 15px rgba(233, 30, 99, 0.3);
+  transition: all 0.3s ease;
+}
+
+.custom-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(233, 30, 99, 0.5);
+}
+
+.custom-btn .icon {
   font-size: 1.1rem;
 }
 </style>

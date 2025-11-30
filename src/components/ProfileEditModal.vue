@@ -7,6 +7,26 @@
       </div>
       
       <div class="modal-body">
+        <!-- 🔥 [NEW] Character Preview -->
+        <div class="character-preview" v-if="initialData.character">
+          <CharacterAvatar 
+            :seed="initialData.character.seed"
+            :skinColor="initialData.character.skinColor"
+            :top="initialData.character.top"
+            :hairColor="initialData.character.hairColor"
+            :hatColor="initialData.character.hatColor"
+            :eyes="initialData.character.eyes"
+            :mouth="initialData.character.mouth"
+            :eyebrows="initialData.character.eyebrows"
+            :accessories="initialData.character.accessories"
+            :clothing="initialData.character.clothing"
+            :clothesColor="initialData.character.clothesColor"
+            :backgroundColor="initialData.character.backgroundColor"
+            :size="100"
+            mode="face"
+          />
+        </div>
+
         <div class="form-group">
           <label>닉네임</label>
           <input type="text" v-model="form.nickname" placeholder="닉네임을 입력하세요" />
@@ -45,6 +65,7 @@
 import { ref, watch } from 'vue';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import CharacterAvatar from './CharacterAvatar.vue';
 
 const props = defineProps<{
   isOpen: boolean;
@@ -53,6 +74,7 @@ const props = defineProps<{
     nickname: string;
     major: string;
     year: number;
+    character?: any;
   };
 }>();
 
@@ -68,6 +90,8 @@ const form = ref({
   major: '',
   year: '' // 문자열로 처리 (00, 01...)
 });
+
+
 
 const isSaving = ref(false);
 const errorMessage = ref('');
@@ -159,11 +183,28 @@ function close() {
   border: none;
   color: #aaa;
   font-size: 1.5rem;
-  cursor: pointer;
+}
+
+.modal-body {
+  margin-bottom: 2rem;
+}
+
+.character-preview {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 50%;
+  width: 120px;
+  height: 120px;
+  margin-left: auto;
+  margin-right: auto;
+  align-items: center;
 }
 
 .form-group {
-  margin-bottom: 16px;
+  margin-bottom: 1.2rem;
 }
 
 .form-group label {
@@ -223,6 +264,11 @@ function close() {
   color: #fff;
   font-weight: bold;
   cursor: pointer;
+}
+
+.btn-save:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 .btn-save:disabled {

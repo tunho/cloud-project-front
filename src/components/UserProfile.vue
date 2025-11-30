@@ -2,12 +2,32 @@
   <div class="user-profile-card">
     <div class="profile-content">
       <div class="avatar-wrapper">
-        <div class="avatar">👤</div>
+        <div class="avatar-container" :style="avatarStyle">
+          <CharacterAvatar 
+            v-if="userData?.character"
+            :seed="userData.character.seed"
+            :skinColor="userData.character.skinColor"
+            :top="userData.character.top"
+            :hairColor="userData.character.hairColor"
+            :hatColor="userData.character.hatColor"
+            :eyes="userData.character.eyes"
+            :mouth="userData.character.mouth"
+            :eyebrows="userData.character.eyebrows"
+            :accessories="userData.character.accessories"
+            :clothing="userData.character.clothing"
+            :clothesColor="userData.character.clothesColor"
+            :backgroundColor="userData.character.backgroundColor"
+            :size="48"
+            mode="face"
+          />
+          <div v-else class="default-avatar">{{ equippedIconValue || '👤' }}</div>
+        </div>
         <div class="status-dot"></div>
       </div>
       
       <div class="user-details">
         <div class="nickname-row">
+          <span v-if="equippedTitleValue" class="title-badge">{{ equippedTitleValue }}</span>
           <div class="nickname">{{ userData?.nickname || 'Guest' }}</div>
           <!-- 🔥 [추가] 정보 수정 버튼 (세련된 아이콘) -->
           <button class="edit-btn" @click="openEditModal" title="정보 수정">
@@ -40,10 +60,13 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { useRouter } from 'vue-router';
 import { auth, db } from '../firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
-import ProfileEditModal from './ProfileEditModal.vue'; // 🔥 Import
+import ProfileEditModal from './ProfileEditModal.vue';
+import CharacterAvatar from './CharacterAvatar.vue';
+import { shopItems } from '../data/shopItems';
 
 interface UserData {
   nickname: string;
@@ -51,6 +74,23 @@ interface UserData {
   year: number;
   money: number;
   email: string;
+  equipped_title?: string;
+  equipped_icon?: string;
+  equipped_theme?: string;
+  character?: {
+    seed: string;
+    top: string;
+    hairColor: string;
+    hatColor: string;
+    skinColor: string;
+    eyes: string;
+    eyebrows: string;
+    mouth: string;
+    clothing: string;
+    clothesColor: string;
+    accessories?: string;
+    backgroundColor: string;
+  };
 }
 
 const userData = ref<UserData | null>(null);
@@ -65,11 +105,34 @@ const formattedMoney = computed(() => {
   return userData.value.money.toLocaleString('ko-KR');
 });
 
+const equippedTitleValue = computed(() => {
+  if (!userData.value?.equipped_title) return null;
+  const item = shopItems.find(i => i.id === userData.value?.equipped_title);
+  return item?.value || null;
+});
+
+const equippedIconValue = computed(() => {
+  if (!userData.value?.equipped_icon) return null;
+  const item = shopItems.find(i => i.id === userData.value?.equipped_icon);
+  return item?.value || null;
+});
+
+const avatarStyle = computed(() => {
+  if (!userData.value?.equipped_theme) {
+    return { background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' };
+  }
+  const item = shopItems.find(i => i.id === userData.value?.equipped_theme);
+  return item ? { background: item.value } : { background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' };
+});
+
 const editInitialData = computed(() => ({
   nickname: userData.value?.nickname || '',
   major: userData.value?.major || '',
-  year: userData.value?.year || 0
+  year: userData.value?.year || 0,
+  character: userData.value?.character // 🔥 Pass character data
 }));
+
+const router = useRouter();
 
 function openEditModal() {
   if (!currentUid.value) return;
@@ -143,7 +206,7 @@ onUnmounted(() => {
   position: relative;
 }
 
-.avatar {
+.avatar-container {
   width: 40px;
   height: 40px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -151,9 +214,13 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.2rem;
   box-shadow: 0 2px 10px rgba(118, 75, 162, 0.4);
   border: 2px solid rgba(255, 255, 255, 0.2);
+  overflow: hidden;
+}
+
+.default-avatar {
+  font-size: 1.2rem;
 }
 
 .status-dot {
@@ -178,6 +245,16 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.title-badge {
+  background: linear-gradient(135deg, #ffd700, #ffed4e);
+  color: #5a4a00;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .nickname {

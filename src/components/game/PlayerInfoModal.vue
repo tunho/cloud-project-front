@@ -3,7 +3,26 @@
   <div v-show="isOpen && player" class="player-info-modal-overlay" @click.self="$emit('close')">
     <div class="player-info-modal">
       <div class="modal-header">
-        <div class="player-avatar">👤</div>
+        <div class="player-avatar">
+          <CharacterAvatar 
+            v-if="player?.character"
+            :seed="player.character.seed"
+            :skinColor="player.character.skinColor"
+            :top="player.character.top"
+            :hairColor="player.character.hairColor"
+            :hatColor="player.character.hatColor"
+            :eyes="player.character.eyes"
+            :mouth="player.character.mouth"
+            :eyebrows="player.character.eyebrows"
+            :accessories="player.character.accessories"
+            :clothing="player.character.clothing"
+            :clothesColor="player.character.clothesColor"
+            :backgroundColor="player.character.backgroundColor"
+            :size="100"
+            mode="face"
+          />
+          <span v-else>👤</span>
+        </div>
         <h2>{{ player?.nickname || player?.name }}</h2>
         <button class="close-btn" @click="close">✕</button>
       </div>
@@ -41,6 +60,8 @@
 
 <script setup lang="ts">
 
+import CharacterAvatar from '../CharacterAvatar.vue';
+
 interface Player {
   id: number;
   nickname?: string;
@@ -49,7 +70,8 @@ interface Player {
   year?: number;
   money: number;
   uid: string;
-  betAmount?: number; // 🔥 [추가]
+  betAmount?: number;
+  character?: any; // 🔥 [추가]
 }
 
 const props = defineProps<{

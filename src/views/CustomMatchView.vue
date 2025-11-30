@@ -13,6 +13,13 @@
     </div>
 
     <div class="action-section">
+      <!-- 🔥 [추가] 게임 선택 -->
+      <!-- 🔥 [수정] 게임 모드 표시 (선택 불가) -->
+      <div class="game-info-box">
+        <span class="game-icon">{{ selectedGameType === 'omok' ? '⚫' : '🧩' }}</span>
+        <span class="game-title">{{ selectedGameType === 'omok' ? '오목 (Omok)' : '다빈치 코드 (Davinci Code)' }}</span>
+      </div>
+
       <button class="create-btn" @click="createRoom">
         <span class="btn-icon">➕</span>
         <span class="btn-text">새로운 방 만들기</span>
@@ -43,7 +50,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from "vue";
-import { useRouter, onBeforeRouteLeave } from "vue-router";
+import { useRouter, useRoute, onBeforeRouteLeave } from "vue-router";
 import { socket } from "../socket";
 import { auth, db } from "../firebase";
 import { doc, getDoc } from "firebase/firestore";
@@ -51,7 +58,9 @@ import { onAuthStateChanged } from "firebase/auth";
 import UserProfile from "../components/UserProfile.vue";
 
 const router = useRouter();
+const route = useRoute(); // 🔥 [추가]
 const roomCode = ref("");
+const selectedGameType = ref<'davinci' | 'omok'>((route.query.game as 'davinci' | 'omok') || 'davinci'); // 🔥 [수정]
 
 // 사용자 표시명
 const currentUid = ref<string | null>(null);
@@ -113,9 +122,6 @@ function onErrorMessage({ message }: { message: string }) {
 // -------------------------------------------------
 // 방 만들기
 // -------------------------------------------------
-// -------------------------------------------------
-// 방 만들기
-// -------------------------------------------------
 async function createRoom() {
   if (!currentUid.value) return;
 
@@ -138,7 +144,9 @@ async function createRoom() {
     nickname: nickname.value,
     major,
     year,
-    money
+    money,
+    gameType: selectedGameType.value, // 🔥 [추가]
+    roomName: `${nickname.value}'s Room` // 🔥 [FIX] roomName 필수
   });
 }
 
@@ -180,7 +188,11 @@ function joinRoom() {
 }
 
 function goBack() {
-  router.push("/davinci-home");
+  if (selectedGameType.value === 'omok') {
+    router.push("/omok-home");
+  } else {
+    router.push("/davinci-home");
+  }
 }
 
 // 🔥 [추가] 브라우저 뒤로가기 = 뒤로가기 버튼
@@ -345,4 +357,30 @@ button:active {
   background: rgba(255, 255, 255, 0.2);
   transform: translateX(-5px);
 }
+
+/* 🔥 [추가] 게임 선택 스타일 */
+/* 🔥 [NEW] Game Info Box */
+.game-info-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 1.5rem;
+  border-radius: 15px;
+  margin-bottom: 2rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.game-info-box .game-icon {
+  font-size: 2rem;
+}
+
+.game-info-box .game-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #ffd700;
+}
+
+/* Removed game-select-box styles */
 </style>
