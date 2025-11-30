@@ -5,6 +5,12 @@
     <div class="header-section">
       <h1>🎮 대기실</h1>
       <p class="sub-text">플레이어가 모두 모이면 게임을 시작하세요</p>
+      
+      <!-- 🔥 [NEW] Game Type Indicator -->
+      <div class="game-type-badge" :class="gameType">
+        <span class="icon">{{ gameType === 'omok' ? '⚫' : '🧩' }}</span>
+        <span class="text">{{ gameType === 'omok' ? '오목 (Omok)' : '다빈치 코드 (Davinci Code)' }}</span>
+      </div>
     </div>
 
     <div class="code-section">
@@ -248,15 +254,39 @@ onUnmounted(() => {
   margin: 80px auto;
   padding: 40px 30px;
   border-radius: 24px;
-  background: rgba(15, 12, 41, 0.85);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.6);
+  background: rgba(15, 12, 41, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
   border: 1px solid rgba(255, 255, 255, 0.1);
   text-align: center;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   color: white;
-  animation: scaleUp 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  animation: fadeIn 0.6s ease-out;
+}
+
+/* 🔥 [NEW] Game Type Badge */
+.game-type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  margin-top: 10px;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.game-type-badge.omok {
+  background: rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.game-type-badge.davinci {
+  background: rgba(66, 133, 244, 0.2);
+  border-color: rgba(66, 133, 244, 0.4);
 }
 
 @keyframes scaleUp {

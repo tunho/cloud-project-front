@@ -4,7 +4,7 @@
     <!-- 1. 게임 초기화 전 로딩 화면 -->
     <div v-if="phase === 'INIT'" class="loading-screen">
       <div class="spinner"></div>
-      <p>게임 준비 중...</p>
+      <p>게임 들어가는 중...</p>
     </div>
     <template v-for="side in sideList" :key="side">
       <template v-for="p in players" :key="side + '-' + p.sid">
