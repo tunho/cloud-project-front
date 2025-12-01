@@ -11,10 +11,6 @@
         <button class="ranking-btn" @click="openLeaderboard">
           <span class="icon">🏆</span> 랭킹
         </button>
-        <!-- 🔥 [NEW] 상점 버튼 -->
-        <button class="shop-btn" @click="goShop">
-          <span class="icon">🛍️</span> 상점
-        </button>
         <!-- 🔥 [NEW] 꾸미기 버튼 -->
         <button class="custom-btn" @click="goCustomization">
           <span class="icon">👕</span> 꾸미기

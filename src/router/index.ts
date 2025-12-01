@@ -7,7 +7,6 @@ import GamePlatformView from "../views/GamePlatformView.vue";
 import CustomMatchView from "../views/CustomMatchView.vue";
 import MatchingView from "../views/MatchingView.vue";
 import CustomRoomView from "../views/CustomRoomView.vue";
-import GameView from "../views/GameView.vue";
 import ShopView from "../views/ShopView.vue";
 import CharacterCustomizationView from "../views/CharacterCustomizationView.vue";
 import OmokView from "../views/OmokView.vue";
@@ -20,7 +19,11 @@ const routes = [
   { path: "/custom-match", component: CustomMatchView },
   { path: "/matching", component: MatchingView },
   { path: "/custom-match/:roomId", component: CustomRoomView, },
-  { path: "/room/:roomId/play", component: GameView },
+  {
+    path: '/room/:roomId/play',
+    name: 'game-room',
+    component: () => import('../views/DavinciGameView.vue') // 🔥 [RENAME]
+  },
   { path: "/shop", component: ShopView },
   { path: "/customization", component: CharacterCustomizationView },
   { path: "/room/:roomId/omok", component: OmokView }

@@ -68,7 +68,7 @@ watch(() => props.isVisible, (newVal) => {
     animationStep.value = "entering";
     showResultIcon.value = false;
   }
-});
+}, { immediate: true });
 
 function runAnimationSequence() {
   // 1. 열쇠 등장 (0.5초)

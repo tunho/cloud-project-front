@@ -2,8 +2,8 @@
   <div v-if="isVisible" class="modal-overlay">
     <div class="modal-content" :class="{ victory: isVictory, defeat: !isVictory }">
       <div class="result-header">
-        <div class="icon">{{ isVictory ? '🏆' : '💀' }}</div>
-        <h1>{{ isVictory ? 'VICTORY' : 'GAME OVER' }}</h1>
+        <div class="icon">{{ isVictory ? '🏆' : '🏁' }}</div>
+        <h1>{{ isVictory ? 'VICTORY' : 'FINISHED' }}</h1>
         <p class="rank-text">{{ myRank }}위로 마감했습니다</p>
       </div>
 

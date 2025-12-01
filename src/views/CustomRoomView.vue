@@ -4,7 +4,7 @@
     <div class="room-container">
     <div class="header-section">
       <h1>🎮 대기실</h1>
-      <p class="sub-text">플레이어가 모두 모이면 게임을 시작하세요</p>
+
       
       <!-- 🔥 [NEW] Game Type Indicator -->
       <div class="game-type-badge" :class="gameType">
@@ -14,7 +14,6 @@
     </div>
 
     <div class="code-section">
-      <span class="label">ROOM CODE</span>
       <div class="code-box" @click="copyRoomCode">
         <span class="code-text">{{ roomId }}</span>
         <span class="copy-icon" title="복사하기">📋</span>
@@ -32,11 +31,18 @@
           :class="{ 'is-host': p.id === 0 }"
         >
           <div class="avatar">
-            {{ p.name ? p.name.charAt(0).toUpperCase() : '?' }}
+            <CharacterAvatar 
+                v-if="p.character"
+                v-bind="p.character"
+                :size="60"
+                mode="face"
+            />
+            <span v-else>{{ p.name ? p.name.charAt(0).toUpperCase() : '?' }}</span>
           </div>
           <div class="player-info">
             <span class="name">{{ p.name }}</span>
             <span v-if="p.id === 0" class="host-badge">👑 방장</span>
+            <button class="info-btn" @click.stop="showPlayerInfo(p)">👁️</button> <!-- 🔥 [NEW] Info Button -->
           </div>
         </div>
 
@@ -48,6 +54,13 @@
         </div>
       </div>
     </div>
+
+    <!-- 🔥 [NEW] Player Info Modal -->
+    <PlayerInfoModal
+      :isOpen="!!selectedPlayer"
+      :player="selectedPlayer"
+      @close="selectedPlayer = null"
+    />
 
     <div class="action-buttons">
       <button
@@ -79,9 +92,17 @@ import { auth, db } from "../firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import UserProfile from "../components/UserProfile.vue"; // 🔥 Import
+import CharacterAvatar from "../components/CharacterAvatar.vue"; // 🔥 Import
+import PlayerInfoModal from "../components/game/PlayerInfoModal.vue"; // 🔥 Import
 
 const router = useRouter();
 const route = useRoute();
+
+const selectedPlayer = ref<any>(null); // 🔥 [NEW] Selected player for info modal
+
+function showPlayerInfo(player: any) {
+    selectedPlayer.value = player;
+}
 
 // ... (중략) ...
 
@@ -123,6 +144,7 @@ function bindAuthListener() {
         
       // 닉네임 로드 후 입장 처리 (새로고침 대응)
       const userData = snap.exists() ? snap.data() : {};
+      
       socket.emit("enter_room", {
         roomId,
         uid: user.uid,
@@ -131,6 +153,7 @@ function bindAuthListener() {
         major: userData.major || "",
         year: userData.year || 0,
         money: userData.money || 0,
+        character: userData.character || null, // 🔥 [FIX] Send character data
       });
 
     } else {
@@ -147,6 +170,7 @@ const gameType = ref('davinci'); // 🔥 [추가]
 
 function onRoomState(data: any) {
   players.value = data.players || [];
+  gameType.value = data.gameType || 'davinci'; // 🔥 [NEW] Capture gameType
   const me = players.value.find((p: any) => p.uid === currentUid.value);
   if (me) isHost.value = me.id === 0;
   if (data.gameType) gameType.value = data.gameType; // 🔥 [추가]
@@ -179,10 +203,12 @@ function onErrorMessage({ message }: { message: string }) {
 // 방 나가기
 // -------------------------
 function leaveRoom() {
-  if (currentUid.value) {
-    socket.emit("leave_room", { roomId, uid: currentUid.value });
+  socket.emit("leave_room", { roomId });
+  if (gameType.value === 'omok') {
+    router.push('/omok-home');
+  } else {
+    router.push('/davinci-home');
   }
-  router.push("/custom-match");
 }
 
 // 🔥 [추가] 브라우저 뒤로가기 = 방 나가기
@@ -250,19 +276,36 @@ onUnmounted(() => {
 <style scoped>
 /* 컨테이너 (글래스모피즘) */
 .room-container {
-  max-width: 500px;
-  margin: 80px auto;
-  padding: 40px 30px;
+  max-width: 800px; /* 🔥 [FIX] Increased width */
+  margin: 60px auto;
+  padding: 50px 40px;
   border-radius: 24px;
-  background: rgba(15, 12, 41, 0.75);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(15, 12, 41, 0.85); /* Slightly darker */
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   text-align: center;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   color: white;
   animation: fadeIn 0.6s ease-out;
+}
+
+/* ... (omitted) ... */
+
+.info-btn {
+  background: none;
+  border: none;
+  font-size: 1.2rem; /* 🔥 [FIX] Smaller icon */
+  cursor: pointer;
+  opacity: 0.7;
+  transition: transform 0.2s, opacity 0.2s;
+  padding: 5px;
+}
+
+.info-btn:hover {
+  transform: scale(1.1);
+  opacity: 1;
 }
 
 /* 🔥 [NEW] Game Type Badge */
@@ -374,26 +417,29 @@ onUnmounted(() => {
 
 .player-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  grid-template-columns: repeat(2, 1fr); /* 2 columns */
+  gap: 20px;
 }
 
-/* 플레이어 카드 */
 .player-card {
-  background: rgba(255, 255, 255, 0.07);
-  padding: 12px;
-  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+  padding: 20px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  border: 1px solid transparent;
+  gap: 15px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   transition: all 0.3s ease;
 }
 
+.player-card:hover {
+    background: rgba(255, 255, 255, 0.1);
+    transform: translateY(-2px);
+}
+
 .player-card.is-host {
-  background: linear-gradient(135deg, rgba(66, 133, 244, 0.15), rgba(15, 12, 41, 0.3));
-  border-color: rgba(66, 133, 244, 0.4);
-  box-shadow: 0 0 15px rgba(66, 133, 244, 0.1);
+  border-color: #ffd700;
+  background: rgba(255, 215, 0, 0.05);
 }
 
 .player-card.empty {
@@ -403,8 +449,8 @@ onUnmounted(() => {
 }
 
 .avatar {
-  width: 40px;
-  height: 40px;
+  width: 70px; /* 🔥 [FIX] Larger avatar area */
+  height: 70px;
   border-radius: 50%;
   background: linear-gradient(135deg, #667eea, #764ba2);
   display: flex;

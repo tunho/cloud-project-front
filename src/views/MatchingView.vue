@@ -3,7 +3,14 @@
     <h1>매칭 중…</h1>
 
     <div class="profile-box">
-      <div class="profile-circle">{{ firstLetter }}</div>
+      <div class="avatar-wrapper" v-if="character">
+        <CharacterAvatar 
+            v-bind="character" 
+            :size="120" 
+            mode="face" 
+        />
+      </div>
+      <div class="profile-circle" v-else>{{ firstLetter }}</div>
       <div class="profile-name">{{ nickname }}</div>
     </div>
 
@@ -41,7 +48,10 @@ const queueMax = ref(4);
 const major = ref("");
 const year = ref(0);
 const money = ref(0);
+const character = ref<any>(null); // 🔥 [FIX] Character data
 const isMatched = ref(false); // 🔥 [NEW] 매칭 성공 여부 (Top Level)
+
+import CharacterAvatar from "../components/CharacterAvatar.vue"; // 🔥 Import
 
 // -------------------------
 // 사용자 정보 로드
@@ -58,6 +68,7 @@ async function loadUserProfile(uid: string) {
       console.log("✅ Set Major:", major.value); // [DEBUG]
       year.value = data.year || 0;
       money.value = data.money || 0;
+      character.value = data.character || null; // 🔥 [FIX] Fetch character
     } else {
       console.warn("⚠️ User profile not found for uid:", uid);
     }

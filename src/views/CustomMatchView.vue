@@ -1,7 +1,7 @@
 <template>
   <UserProfile />
   <button class="back-btn" @click="goBack">
-    <span class="icon">⬅️</span> 다비치 코드
+    <span class="icon">⬅️</span> {{ selectedGameType === 'omok' ? '오목 로비' : '다빈치 코드' }}
   </button>
   <div class="custom-container">
     <!-- 🔥 [추가] 뒤로가기 버튼 -->
@@ -122,31 +122,27 @@ function onErrorMessage({ message }: { message: string }) {
 // -------------------------------------------------
 // 방 만들기
 // -------------------------------------------------
-async function createRoom() {
+function createRoom() {
   if (!currentUid.value) return;
-
-  // 🔥 [수정] 방 생성 시에도 상세 정보 전송
-  const snap = await getDoc(doc(db, "users", currentUid.value));
-  let major = "";
-  let year = 0;
-  let money = 0;
   
-  if (snap.exists()) {
-    const data = snap.data();
-    major = data.major || "";
-    year = data.year || 0;
-    money = data.money || 0;
-  }
-
-  socket.emit("create_room", {
-    uid: currentUid.value,
-    name: nickname.value,
-    nickname: nickname.value,
-    major,
-    year,
-    money,
-    gameType: selectedGameType.value, // 🔥 [추가]
-    roomName: `${nickname.value}'s Room` // 🔥 [FIX] roomName 필수
+  // 🔥 [수정] 방 생성 시 캐릭터 정보 포함
+  getDoc(doc(db, "users", currentUid.value)).then((snap) => {
+      let userData: any = {};
+      if (snap.exists()) {
+          userData = snap.data();
+      }
+      
+      socket.emit("create_room", {
+        uid: currentUid.value,
+        name: nickname.value,
+        nickname: nickname.value,
+        major: userData.major || "",
+        year: userData.year || 0,
+        money: userData.money || 0,
+        character: userData.character || null, // 🔥 [FIX] Send character
+        gameType: selectedGameType.value, // 🔥 [NEW] Send gameType
+        roomName: `${nickname.value}'s Room`
+      });
   });
 }
 
@@ -164,15 +160,9 @@ function joinRoom() {
 
   // 🔥 [수정] 입장 시에도 상세 정보 전송
   getDoc(doc(db, "users", currentUid.value)).then((snap) => {
-    let major = "";
-    let year = 0;
-    let money = 0;
-    
+    let userData: any = {};
     if (snap.exists()) {
-      const data = snap.data();
-      major = data.major || "";
-      year = data.year || 0;
-      money = data.money || 0;
+      userData = snap.data();
     }
 
     socket.emit("enter_room", {
@@ -180,18 +170,19 @@ function joinRoom() {
       uid: currentUid.value,
       name: nickname.value,
       nickname: nickname.value,
-      major,
-      year,
-      money
+      major: userData.major || "",
+      year: userData.year || 0,
+      money: userData.money || 0,
+      character: userData.character || null // 🔥 [FIX] Send character
     });
   });
 }
 
 function goBack() {
   if (selectedGameType.value === 'omok') {
-    router.push("/omok-home");
+    router.push('/omok-home');
   } else {
-    router.push("/davinci-home");
+    router.push('/davinci-home');
   }
 }
 

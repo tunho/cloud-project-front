@@ -6,6 +6,33 @@
       <div class="spinner"></div>
       <p>게임 들어가는 중...</p>
     </div>
+    <!-- 🔥 [FIX] Simplified condition for My Hand -->
+    <div v-if="me" class="my-hand-container">
+      <div v-if="seatMap[me.sid] === 'bottom'" class="deck-piles">
+        <div id="deck-black" class="deck black">
+            <span class="deck-count">{{ piles.black }}</span>
+            <span class="deck-label">BLACK</span>
+        </div>
+        <div id="deck-white" class="deck white">
+            <span class="deck-count">{{ piles.white }}</span>
+            <span class="deck-label">WHITE</span>
+        </div>
+      </div>
+      
+      <div class="my-hand">
+        <PlayerCard
+          :player="{ ...me, character: playerProfiles[me?.uid]?.character }"
+          :isMe="true"
+          :active="me.id === currentTurn"
+          :phase="phase"
+          side="bottom"
+          :isMyTurn="isMyTurn"
+          :selectedTarget="selectedTarget"
+          @select-tile="handleTileSelected"
+          @show-info="showPlayerInfo"
+        />
+      </div>
+    </div>
     <template v-for="side in sideList" :key="side">
       <template v-for="p in players" :key="side + '-' + p.sid">
         <div v-if="seatMap[p.sid] === side" :class="side + (side === 'top' ? '-player' : '-zone')">
@@ -52,71 +79,14 @@
 
       <!-- 🔥 [삭제] 중앙 덱 (사용자 요청으로 제거, 애니메이션은 화면 중앙 좌표 사용) -->
 
-      
-    </div>
-
-    <div v-if="me && seatMap[me.sid] === 'bottom'">
-      <div class="deck-piles">
-      <div id="deck-black" class="deck black">
-        <span class="deck-count">{{ piles.black }}</span>
-        <span class="deck-label">BLACK</span>
-      </div>
-      <div id="deck-white" class="deck white">
-        <span class="deck-count">{{ piles.white }}</span>
-        <span class="deck-label">WHITE</span>
-      </div>
-    </div>
-      <div class="my-hand">
-        <PlayerCard
-          :player="{ ...me, character: playerProfiles[me?.uid]?.character }"
-          :isMe="true"
-          :active="me.id === currentTurn"
-          :phase="phase"
-          side="bottom"
-          :isMyTurn="isMyTurn"
-          :selectedTarget="selectedTarget"
-          @select-tile="handleTileSelected"
-          @show-info="showPlayerInfo"
-        />
-      </div>
-    </div>
-
-    <GuessAnimationOverlay
-      :isVisible="isAnimating"
-      :targetRect="animTargetRect"
-      :isCorrect="animIsCorrect"
-      :guessedValue="animGuessedValue"
-      @animation-complete="handleAnimationComplete"
-    />
-    <!-- 🔥 [NEW] 타임아웃 알림 토스트 -->
-    <Transition name="toast">
-      <div v-if="showTimeoutToast" :class="['timeout-toast', toastType]">
-        {{ timeoutToastMessage }}
-      </div>
-    </Transition>
-
-    <!-- 조커 위치 지정 오버레이 -->
-    <JokerPlacementOverlay
-      v-if="isMyTurn && phase === 'PLACE_JOKER' && drawnTile && drawnTile.isJoker"
-      :hand="myHand"
-      :drawn-tile="drawnTile"
-      @place-joker="handlePlaceJoker"
-    />
-    
-    <!-- 추리 성공 후 계속하기/멈추기 선택 오버레이 -->
-    <ContinueGuessOverlay
-      v-if="isMyTurn && phase === 'POST_SUCCESS_GUESS' && showContinueOverlay"
-      :is-visible="true"
-      :timer="continueTimer"
-      @continue="handleContinueGuess"
-      @pass="handlePassTurn"
-    />
+    </div> <!-- 🔥 [FIX] Close center-area here -->
 
     <!-- 게임 오버 모달 -->
     <GameOverModal
       v-if="showGameOverModal"
       :is-visible="true"
       :my-result="myPayoutResult"
+      :all-results="payouts" 
       @close="handleGameOverClose"
     />
 
@@ -124,6 +94,33 @@
     <FlyingCardOverlay
       :cards="flyingCards"
       @animation-complete="handleFlyComplete"
+    />
+
+    <!-- 🔥 [FIX] Joker Placement Overlay (Was missing) -->
+    <JokerPlacementOverlay
+      v-if="isMyTurn && phase === 'PLACE_JOKER'"
+      :hand="myHand"
+      :drawnTile="drawnTile"
+      @place-joker="handlePlaceJoker"
+    />
+
+    <!-- 🔥 [FIX] Guess Animation Overlay (Was missing) -->
+    <GuessAnimationOverlay
+      v-if="isAnimating && animTargetRect"
+      :isVisible="true"
+      :targetRect="animTargetRect"
+      :isCorrect="animIsCorrect"
+      :guessedValue="animGuessedValue"
+      @animation-complete="handleAnimationComplete"
+    />
+
+    <!-- 🔥 [FIX] Continue Guess Overlay (Was missing) -->
+    <ContinueGuessOverlay
+      v-if="showContinueOverlay"
+      :isVisible="true"
+      :timer="continueTimer"
+      @continue="handleContinueGuess"
+      @pass="handlePassTurn"
     />
 
     <!-- 🔥 [NEW] Player Info Modal - Teleport로 body로 이동 -->
@@ -135,7 +132,7 @@
       />
     </Teleport>
 
-    <!-- 🔥 [추가] 나가기 버튼 -->
+    <!-- 🔥 [추가] 나가기 버튼 (game-container의 직계 자식으로 이동) -->
     <button class="exit-btn" @click="handleExitRoom">
       <span class="icon">🚪</span> 나가기
     </button>
@@ -183,6 +180,7 @@ const continueTimer = ref(0);
 // 🔥 [추가] 게임 종료 모달 상태
 const showGameOverModal = ref(false);
 const myPayoutResult = ref<any>(null);  // 🔥 [FIXED] Restored myPayoutResult
+const payouts = ref<any[]>([]); // 🔥 [FIX] Added payouts ref
 
 // 🔥 [NEW] 초기 애니메이션 상태 및 타임아웃 알림
 const isInitialAnimationPlaying = ref(false);
@@ -715,6 +713,7 @@ function closePlayerInfo() {
 // 🔥 [추가] 게임 정산 결과 핸들링
 function handlePayoutResult(results: any[]) {
   console.log("💰 [GameView] handlePayoutResult received:", results);
+  payouts.value = results; // 🔥 [FIX] Update payouts ref so it's passed to GameOverModal
   
   let myData = null;
   
@@ -867,10 +866,16 @@ onMounted(async () => {
   // 🔥 [NEW] 게임 종료 이벤트 리스너 (명시적 종료 처리)
   socket.on("game_over", (data) => {
     console.log("🏆 [GameView] Game Over:", data);
-    // payout_result가 먼저 오겠지만, 혹시 모르니 여기서도 모달 트리거 가능
-    // 하지만 보통 payout_result에서 처리하므로 여기서는 로그만 찍거나
-    // 필요하다면 showGameOverModal.value = true; 를 할 수 있음
-    // (중복 실행 방지를 위해 체크)
+    
+    // 🔥 [FIX] Populate payouts and myResult
+    if (data.payouts) {
+        payouts.value = data.payouts;
+        const myRes = data.payouts.find((p: any) => p.uid === (auth.currentUser?.uid));
+        if (myRes) {
+            myPayoutResult.value = myRes;
+        }
+    }
+
     if (!showGameOverModal.value) {
         console.log("   - Triggering Game Over Modal from game_over event");
         showGameOverModal.value = true;
@@ -1076,29 +1081,29 @@ function handleBeforeUnload(e: BeforeUnloadEvent) {
 }
 
 /* 🔥 [추가] 나가기 버튼 스타일 */
+/* 🔥 [수정] Exit Button - Top Left */
 .exit-btn {
   position: absolute;
   top: 20px;
   left: 20px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: white;
+  background: rgba(255, 59, 48, 0.2);
+  border: 1px solid rgba(255, 59, 48, 0.5);
+  color: #ff3b30;
   padding: 10px 20px;
   border-radius: 30px;
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 8px;
-  font-weight: 600;
+  font-weight: bold;
   backdrop-filter: blur(5px);
-  transition: all 0.3s ease;
-  z-index: 100;
+  transition: all 0.2s;
+  z-index: 100; /* Ensure it's on top */
 }
 
 .exit-btn:hover {
-  background: rgba(255, 71, 87, 0.2);
-  border-color: rgba(255, 71, 87, 0.5);
-  transform: translateY(-2px);
+  background: rgba(255, 59, 48, 0.4);
+  transform: translateY(2px);
 }
 
 .exit-btn .icon {
