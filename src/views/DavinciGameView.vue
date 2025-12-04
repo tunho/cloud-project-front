@@ -2,10 +2,8 @@
   <div class="game-container">
     <UserProfile />
     <!-- 1. 게임 초기화 전 로딩 화면 -->
-    <div v-if="phase === 'INIT'" class="loading-screen">
-      <div class="spinner"></div>
-      <p>게임 들어가는 중...</p>
-    </div>
+    <!-- 1. 게임 초기화 전 로딩 화면 (Game Start Overlay) -->
+    <GameStartOverlay v-if="phase === 'INIT'" />
     <!-- 🔥 [FIX] Simplified condition for My Hand -->
     <div v-if="me" class="my-hand-container">
       <div v-if="seatMap[me.sid] === 'bottom'" class="deck-piles">
@@ -157,6 +155,7 @@ import ContinueGuessOverlay from "../components/game/ContinueGuessOverlay.vue";
 import JokerPlacementOverlay from "../components/game/JokerPlacementOverlay.vue";
 import FlyingCardOverlay from "../components/game/FlyingCardOverlay.vue";
 import GameOverModal from "../components/game/GameOverModal.vue";
+import GameStartOverlay from "../components/game/GameStartOverlay.vue"; // 🔥 [NEW]
 import PlayerInfoModal from "../components/game/PlayerInfoModal.vue";  // 🔥 [NEW]
 import UserProfile from "../components/UserProfile.vue"; // 🔥 Import
 

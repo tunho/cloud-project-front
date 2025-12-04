@@ -25,24 +25,16 @@
       </div>
 
       <div class="game-grid">
-        <div class="game-card active" @click="goDavinci">
+        <div 
+          v-for="game in GAME_LIST" 
+          :key="game.id" 
+          class="game-card active" 
+          @click="router.push(game.lobbyRoute)"
+        >
           <div class="card-content">
-            
-
-
-            <div class="game-icon">🧩</div>
-            <h3>Davinci Code</h3>
-            <p class="desc">상대방의 코드를 추리하는<br>고도의 심리 전략 게임</p>
-            <button class="play-btn">PLAY NOW</button>
-          </div>
-          <div class="card-bg-glow"></div>
-        </div>
-
-        <div class="game-card active" @click="goOmok">
-          <div class="card-content">
-            <div class="game-icon">⚫⚪</div>
-            <h3>Omok</h3>
-            <p class="desc">오목판 위의 치열한 두뇌 싸움<br>5목을 완성하세요</p>
+            <div class="game-icon">{{ game.icon }}</div>
+            <h3>{{ game.title }}</h3>
+            <p class="desc" v-html="game.description.replace('\n', '<br>')"></p>
             <button class="play-btn">PLAY NOW</button>
           </div>
           <div class="card-bg-glow"></div>
@@ -62,19 +54,14 @@
 import { ref } from "vue";
 import { useRouter } from "vue-router";
 import UserProfile from "../components/UserProfile.vue";
-import LeaderboardModal from "../components/LeaderboardModal.vue"; // 🔥 Import
+import LeaderboardModal from "../components/LeaderboardModal.vue";
+import { GAME_LIST } from "../config/games";
 
 const router = useRouter();
 const showLeaderboard = ref(false);
 
 
-function goDavinci() {
-  router.push("/davinci-home");
-}
 
-function goOmok() {
-  router.push("/omok-home");
-}
 
 function goShop() {
   router.push("/shop");

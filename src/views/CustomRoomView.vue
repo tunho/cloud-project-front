@@ -7,9 +7,9 @@
 
       
       <!-- 🔥 [NEW] Game Type Indicator -->
-      <div class="game-type-badge" :class="gameType">
-        <span class="icon">{{ gameType === 'omok' ? '⚫' : '🧩' }}</span>
-        <span class="text">{{ gameType === 'omok' ? '오목 (Omok)' : '다빈치 코드 (Davinci Code)' }}</span>
+      <div class="game-type-badge" :class="gameConfig.color">
+        <span class="icon">{{ gameConfig.icon }}</span>
+        <span class="text">{{ gameConfig.title }}</span>
       </div>
     </div>
 
@@ -85,7 +85,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, onMounted, onUnmounted, computed } from "vue";
 import { useRouter, useRoute, onBeforeRouteLeave } from "vue-router";
 import { socket, gameEntryGuard } from "../socket";
 import { auth, db } from "../firebase";
@@ -95,8 +95,13 @@ import UserProfile from "../components/UserProfile.vue"; // 🔥 Import
 import CharacterAvatar from "../components/CharacterAvatar.vue"; // 🔥 Import
 import PlayerInfoModal from "../components/game/PlayerInfoModal.vue"; // 🔥 Import
 
+import { getGameConfig } from "../config/games";
+
 const router = useRouter();
 const route = useRoute();
+
+const gameType = ref<string>((route.query.game as string) || 'davinci'); // Default from query
+const gameConfig = computed(() => getGameConfig(gameType.value));
 
 const selectedPlayer = ref<any>(null); // 🔥 [NEW] Selected player for info modal
 
@@ -166,14 +171,15 @@ function bindAuthListener() {
 // -------------------------
 // 소켓 이벤트 핸들러
 // -------------------------
-const gameType = ref('davinci'); // 🔥 [추가]
+
 
 function onRoomState(data: any) {
   players.value = data.players || [];
-  gameType.value = data.gameType || 'davinci'; // 🔥 [NEW] Capture gameType
+  if (data.gameType) {
+      gameType.value = data.gameType;
+  }
   const me = players.value.find((p: any) => p.uid === currentUid.value);
   if (me) isHost.value = me.id === 0;
-  if (data.gameType) gameType.value = data.gameType; // 🔥 [추가]
 }
 
 function onGameStarted(data: any) {
@@ -183,11 +189,7 @@ function onGameStarted(data: any) {
     (window as any).isGameEntryValid = true;
     
     // 🔥 [수정] 게임 타입에 따라 라우팅 분기
-    if (gameType.value === 'omok') {
-        router.replace(`/room/${roomId}/omok`);
-    } else {
-        router.replace(`/room/${roomId}/play`);
-    }
+    router.replace(gameConfig.value.gameRoute(roomId));
   }
 }
 
@@ -330,6 +332,11 @@ onUnmounted(() => {
 .game-type-badge.davinci {
   background: rgba(66, 133, 244, 0.2);
   border-color: rgba(66, 133, 244, 0.4);
+}
+
+.game-type-badge.omok {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.4);
 }
 
 @keyframes scaleUp {

@@ -14,11 +14,24 @@ const routes = [
   { path: "/", component: LoginView },
   { path: "/davinci-home", component: GameLobbyView, props: { gameType: 'davinci' } },
   { path: "/omok-home", component: GameLobbyView, props: { gameType: 'omok' } },
+  { path: "/indian-poker-home", component: GameLobbyView, props: { gameType: 'indian_poker' } },
   { path: "/profile-setup", component: ProfileSetupView },
   { path: "/platform", component: GamePlatformView },
   { path: "/custom-match", component: CustomMatchView },
   { path: "/matching", component: MatchingView },
   { path: "/custom-match/:roomId", component: CustomRoomView, },
+  {
+    path: '/game-lobby',
+    name: 'game-lobby',
+    component: GamePlatformView,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/platform-legacy', // Keep old one just in case
+    name: 'platform-legacy',
+    component: GamePlatformView,
+    meta: { requiresAuth: true }
+  },
   {
     path: '/room/:roomId/play',
     name: 'game-room',
@@ -26,7 +39,8 @@ const routes = [
   },
   { path: "/shop", component: ShopView },
   { path: "/customization", component: CharacterCustomizationView },
-  { path: "/room/:roomId/omok", component: OmokView }
+  { path: "/room/:roomId/omok", component: OmokView },
+  { path: "/room/:roomId/indian_poker", component: () => import('../views/IndianPokerView.vue') }
 ];
 
 export default createRouter({

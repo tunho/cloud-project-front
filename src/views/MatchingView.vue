@@ -29,11 +29,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, onMounted, onUnmounted, computed } from "vue";
 import { useRoute, useRouter, onBeforeRouteLeave } from "vue-router";
 import { socket, gameEntryGuard } from "../socket";
 import { auth, db } from "../firebase";
 import { doc, getDoc } from "firebase/firestore";
+import { getGameConfig } from "../config/games";
 
 const route = useRoute();
 const router = useRouter();
@@ -50,6 +51,10 @@ const year = ref(0);
 const money = ref(0);
 const character = ref<any>(null); // 🔥 [FIX] Character data
 const isMatched = ref(false); // 🔥 [NEW] 매칭 성공 여부 (Top Level)
+const gameTitle = computed(() => {
+    const gameType = (route.query.game as string) || 'davinci';
+    return getGameConfig(gameType).title;
+});
 
 import CharacterAvatar from "../components/CharacterAvatar.vue"; // 🔥 Import
 
@@ -81,11 +86,8 @@ function cancelMatch() {
   socket.emit("leave_queue");
   clearInterval(timer);
   const gameType = (route.query.game as string) || 'davinci';
-  if (gameType === 'omok') {
-    router.push("/omok-home");
-  } else {
-    router.push("/davinci-home");
-  }
+  const config = getGameConfig(gameType);
+  router.push(config.lobbyRoute);
 }
 
 function startTimer() {
@@ -109,12 +111,20 @@ onMounted(() => {
 
   socket.off("queue_status");
   socket.on("queue_status", (data) => {
-    queueCount.value = data.count;
-    queueMax.value = data.max;
+    const currentGameType = (route.query.game as string) || 'davinci';
+    if (data.gameType === currentGameType) {
+        queueCount.value = data.count;
+        queueMax.value = data.max;
+    }
   });
 
   const betAmount = parseInt(route.query.bet as string) || 0; 
   const gameType = (route.query.game as string) || 'davinci';
+  const config = getGameConfig(gameType);
+  
+  // 🔥 [FIX] Initialize queueMax based on game type immediately
+  queueMax.value = gameType === 'davinci' ? 4 : 2;
+
   console.log("🔥 MatchingView mounted. GameType:", gameType, "Bet:", betAmount);
 
   const user = auth.currentUser;
@@ -135,17 +145,20 @@ onMounted(() => {
   }
 
   socket.off("match:success");
-  socket.on("match:success", ({ roomId }) => {
+  socket.on("match:success", ({ roomId, players }) => {
     clearInterval(timer);
     isMatched.value = true; 
     gameEntryGuard.allowed = true;
     (window as any).isGameEntryValid = true;
     
-    if (gameType === 'omok') {
-        router.replace(`/room/${roomId}/omok`);
-    } else {
-        router.replace(`/room/${roomId}/play`);
-    }
+    const gameType = (route.query.game as string) || 'davinci';
+    const config = getGameConfig(gameType);
+    
+    // 🔥 Pass initial players data to avoid loading delay
+    router.replace({
+        path: config.gameRoute(roomId), // It returns a string path
+        state: { initialPlayers: players }
+    });
   });
 });
 

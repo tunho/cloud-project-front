@@ -126,8 +126,10 @@ import { auth, db } from "../firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 
+import { getGameConfig } from "../config/games";
+
 const props = defineProps<{
-  gameType: 'davinci' | 'omok';
+  gameType: string;
 }>();
 
 const router = useRouter();
@@ -143,9 +145,10 @@ const userProfile = ref({ major: "", year: 0 }); // 🔥 [FIX] Store profile dat
 const isLoading = ref(true); // 🔥 [추가] 로딩 상태
 
 // Game Info based on props
-const gameTitle = computed(() => props.gameType === 'omok' ? 'Omok' : 'Davinci Code');
-const gameSubtitle = computed(() => props.gameType === 'omok' ? '오목판 위의 치열한 두뇌 싸움' : '숫자 추리 심리전의 정수');
-const gameIcon = computed(() => props.gameType === 'omok' ? '⚫⚪' : '🧩');
+const gameConfig = computed(() => getGameConfig(props.gameType));
+const gameTitle = computed(() => gameConfig.value.title);
+const gameSubtitle = computed(() => gameConfig.value.subtitle);
+const gameIcon = computed(() => gameConfig.value.icon);
 
 // 🔥 [NEW] Computed Property for Betting Validation
 const isValidBet = computed(() => {

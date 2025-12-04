@@ -160,7 +160,8 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { socket } from '../socket';
 import { useRouter, useRoute } from 'vue-router';
-import { auth } from '../firebase'; // 🔥 [FIX] Import auth
+import { auth, db } from '../firebase'; // 🔥 [FIX] Import auth and db
+import { doc, getDoc } from 'firebase/firestore'; // 🔥 [NEW] Import firestore functions
 import CharacterAvatar from '../components/CharacterAvatar.vue';
 import PlayerInfoModal from '../components/game/PlayerInfoModal.vue';
 import VsScreen from '../components/game/VsScreen.vue'; // 🔥 [NEW] Import
@@ -201,6 +202,40 @@ const player2WithProfile = computed(() => {
     console.log(`👤 Player 2 (${p.uid}) Profile:`, profile);
     return { ...p, character: profile?.character || p.character };
 });
+
+// 🔥 [NEW] Watch players to fetch profiles
+watch(players, async (newPlayers) => {
+  console.log("👥 [OmokView] Players updated:", newPlayers);
+  for (const p of newPlayers) {
+    if (p.uid) {
+        console.log(`🔍 [OmokView] Checking profile for ${p.uid}. Cached:`, playerProfiles.value[p.uid]);
+        if (!playerProfiles.value[p.uid]) {
+            // Mark as fetching to avoid duplicate requests
+            playerProfiles.value[p.uid] = { fetching: true };
+            try {
+                console.log(`📥 [OmokView] Fetching Firestore profile for ${p.uid}...`);
+                const snap = await getDoc(doc(db, 'users', p.uid));
+                if (snap.exists()) {
+                const data = snap.data();
+                console.log(`✅ [OmokView] Fetched profile for ${p.uid}:`, data);
+                if (data.character) {
+                    playerProfiles.value[p.uid] = { character: data.character };
+                } else {
+                    delete playerProfiles.value[p.uid]; // No character data
+                }
+                } else {
+                    console.warn(`⚠️ [OmokView] No profile found for ${p.uid}`);
+                }
+            } catch (e) {
+                console.error("Failed to fetch profile for", p.uid, e);
+                delete playerProfiles.value[p.uid];
+            }
+        }
+    } else {
+        console.warn("⚠️ [OmokView] Player has no UID:", p);
+    }
+  }
+}, { deep: true, immediate: true });
 
 // ... (watchers)
 

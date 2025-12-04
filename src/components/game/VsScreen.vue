@@ -1,32 +1,34 @@
 <template>
   <div class="vs-screen">
-    <div class="player-panel left" :class="{ 'slide-in-left': show }">
+    <div class="player-panel left" :class="{ 'slide-in-left': show && !exiting, 'slide-out-left': exiting }">
       <div class="content">
         <div class="avatar-container">
-            <CharacterAvatar :character="player1?.character" :size="200" />
+            <CharacterAvatar v-bind="player1?.character" :size="200" />
         </div>
         <div class="info">
             <h2 class="nickname">{{ player1?.nickname || player1?.name }}</h2>
             <div class="stats">
-                <span>⛃ {{ player1?.betAmount?.toLocaleString() }}</span>
+                <span class="bet-icon">⛃</span>
+                <span>{{ player1?.entryBet?.toLocaleString() || 0 }}</span>
             </div>
         </div>
       </div>
     </div>
 
-    <div class="vs-badge" :class="{ 'pop-in': show }">
+    <div class="vs-badge" :class="{ 'pop-in': show && !exiting, 'pop-out': exiting }">
       <span>VS</span>
     </div>
 
-    <div class="player-panel right" :class="{ 'slide-in-right': show }">
+    <div class="player-panel right" :class="{ 'slide-in-right': show && !exiting, 'slide-out-right': exiting }">
       <div class="content">
         <div class="avatar-container">
-            <CharacterAvatar :character="player2?.character" :size="200" />
+            <CharacterAvatar v-bind="player2?.character" :size="200" />
         </div>
         <div class="info">
             <h2 class="nickname">{{ player2?.nickname || player2?.name }}</h2>
             <div class="stats">
-                <span>⛃ {{ player2?.betAmount?.toLocaleString() }}</span>
+                <span class="bet-icon">⛃</span>
+                <span>{{ player2?.entryBet?.toLocaleString() || 0 }}</span>
             </div>
         </div>
       </div>
@@ -45,21 +47,32 @@ const props = defineProps<{
 
 const emit = defineEmits(['finish']);
 const show = ref(false);
+const exiting = ref(false);
 
 onMounted(() => {
-  // Trigger animations
+  // Trigger Enter animations
   setTimeout(() => {
     show.value = true;
   }, 100);
 
-  // Auto close
+  // Trigger Exit animations
   setTimeout(() => {
-    emit('finish');
-  }, 3500);
+    exiting.value = true;
+    
+    // Emit finish after animation
+    setTimeout(() => {
+        emit('finish');
+    }, 800);
+  }, 2500);
 });
 </script>
 
 <style scoped>
+.bet-icon {
+    color: #ffd700;
+    margin-right: 5px;
+    font-size: 1.2em;
+}
 .vs-screen {
   position: fixed;
   top: 0;
@@ -80,24 +93,23 @@ onMounted(() => {
   justify-content: center;
   position: relative;
   transition: transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+  width: 50%; /* 🔥 50/50 Split */
 }
 
 .player-panel.left {
   background: linear-gradient(135deg, #1a2a6c, #b21f1f);
   transform: translateX(-100%);
-  clip-path: polygon(0 0, 100% 0, 85% 100%, 0 100%);
-  width: 55%; /* Overlap slightly */
   position: absolute;
   left: 0;
+  border-right: 2px solid rgba(255,255,255,0.2); /* Separator */
 }
 
 .player-panel.right {
-  background: linear-gradient(135deg, #fdbb2d, #22c1c3);
+  background: linear-gradient(135deg, #22c1c3, #fdbb2d); /* 🔥 Adjusted gradient to match but distinct */
   transform: translateX(100%);
-  clip-path: polygon(15% 0, 100% 0, 100% 100%, 0 100%);
-  width: 55%; /* Overlap slightly */
   position: absolute;
   right: 0;
+  border-left: 2px solid rgba(255,255,255,0.2); /* Separator */
 }
 
 .slide-in-left {
@@ -108,8 +120,13 @@ onMounted(() => {
   transform: translateX(0) !important;
 }
 
-.slide-in-right {
-  transform: translateX(0) !important;
+/* Exit Animations */
+.slide-out-left {
+  transform: translateX(-100%) !important;
+}
+
+.slide-out-right {
+  transform: translateX(100%) !important;
 }
 
 .content {
@@ -135,6 +152,8 @@ onMounted(() => {
     background: rgba(0,0,0,0.5);
     padding: 5px 15px;
     border-radius: 20px;
+    width: fit-content; /* 🔥 Dynamic width */
+    min-width: 0;
 }
 
 .vs-badge {
@@ -166,6 +185,11 @@ onMounted(() => {
   transform: translate(-50%, -50%) scale(1) !important;
 }
 
+.pop-out {
+  transform: translate(-50%, -50%) scale(0) !important;
+  transition-delay: 0s; /* Immediate exit */
+}
+
 .avatar-container {
     filter: drop-shadow(0 10px 20px rgba(0,0,0,0.5));
     transition: transform 0.3s;
@@ -173,5 +197,27 @@ onMounted(() => {
 
 .avatar-container:hover {
     transform: scale(1.05);
+}
+
+.skip-btn {
+    position: absolute;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    color: white;
+    padding: 10px 30px;
+    border-radius: 30px;
+    font-size: 1.2rem;
+    cursor: pointer;
+    z-index: 100;
+    transition: all 0.3s;
+    backdrop-filter: blur(5px);
+}
+
+.skip-btn:hover {
+    background: rgba(255, 255, 255, 0.4);
+    transform: translateX(-50%) scale(1.05);
 }
 </style>

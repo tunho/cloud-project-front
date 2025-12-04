@@ -1,7 +1,7 @@
 <template>
   <UserProfile />
   <button class="back-btn" @click="goBack">
-    <span class="icon">⬅️</span> {{ selectedGameType === 'omok' ? '오목 로비' : '다빈치 코드' }}
+    <span class="icon">⬅️</span> {{ backButtonLabel }}
   </button>
   <div class="custom-container">
     <!-- 🔥 [추가] 뒤로가기 버튼 -->
@@ -16,8 +16,8 @@
       <!-- 🔥 [추가] 게임 선택 -->
       <!-- 🔥 [수정] 게임 모드 표시 (선택 불가) -->
       <div class="game-info-box">
-        <span class="game-icon">{{ selectedGameType === 'omok' ? '⚫' : '🧩' }}</span>
-        <span class="game-title">{{ selectedGameType === 'omok' ? '오목 (Omok)' : '다빈치 코드 (Davinci Code)' }}</span>
+        <span class="game-icon">{{ gameIcon }}</span>
+        <span class="game-title">{{ gameTitle }}</span>
       </div>
 
       <button class="create-btn" @click="createRoom">
@@ -49,7 +49,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, onMounted, onUnmounted, computed } from "vue";
 import { useRouter, useRoute, onBeforeRouteLeave } from "vue-router";
 import { socket } from "../socket";
 import { auth, db } from "../firebase";
@@ -57,10 +57,17 @@ import { doc, getDoc } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import UserProfile from "../components/UserProfile.vue";
 
+import { getGameConfig } from "../config/games";
+
 const router = useRouter();
 const route = useRoute(); // 🔥 [추가]
 const roomCode = ref("");
-const selectedGameType = ref<'davinci' | 'omok'>((route.query.game as 'davinci' | 'omok') || 'davinci'); // 🔥 [수정]
+const selectedGameType = ref<string>((route.query.game as string) || 'davinci');
+
+const gameConfig = computed(() => getGameConfig(selectedGameType.value));
+const backButtonLabel = computed(() => gameConfig.value.title + ' Lobby');
+const gameIcon = computed(() => gameConfig.value.icon);
+const gameTitle = computed(() => gameConfig.value.title);
 
 // 사용자 표시명
 const currentUid = ref<string | null>(null);
@@ -179,11 +186,7 @@ function joinRoom() {
 }
 
 function goBack() {
-  if (selectedGameType.value === 'omok') {
-    router.push('/omok-home');
-  } else {
-    router.push('/davinci-home');
-  }
+  router.push(gameConfig.value.lobbyRoute);
 }
 
 // 🔥 [추가] 브라우저 뒤로가기 = 뒤로가기 버튼
