@@ -9,7 +9,7 @@
             <h2 class="nickname">{{ player1?.nickname || player1?.name }}</h2>
             <div class="stats">
                 <span class="bet-icon">⛃</span>
-                <span>{{ player1?.entryBet?.toLocaleString() || 0 }}</span>
+                <span>{{ (player1?.entryBet ?? player1?.betAmount)?.toLocaleString() || 0 }}</span>
             </div>
         </div>
       </div>
@@ -28,7 +28,7 @@
             <h2 class="nickname">{{ player2?.nickname || player2?.name }}</h2>
             <div class="stats">
                 <span class="bet-icon">⛃</span>
-                <span>{{ player2?.entryBet?.toLocaleString() || 0 }}</span>
+                <span>{{ (player2?.entryBet ?? player2?.betAmount)?.toLocaleString() || 0 }}</span>
             </div>
         </div>
       </div>

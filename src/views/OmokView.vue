@@ -105,16 +105,28 @@
       </div>
     </div>
 
+    <!-- Notification Overlay -->
+    <div v-if="notificationMessage" class="notification-overlay">
+        <div class="notification-content">
+            {{ notificationMessage }}
+        </div>
+    </div>
+
     <!-- Game Over Overlay (Davinci Style) -->
     <div v-if="phase === 'GAME_OVER'" class="game-over-overlay">
         <div class="result-card" :class="{ victory: amIWinner, defeat: !amIWinner }">
             <div class="result-icon">{{ amIWinner ? '🏆' : '🏁' }}</div>
-            <h2>{{ amIWinner ? 'VICTORY' : 'GAME OVER' }}</h2>
+            <h2>{{ amIWinner ? 'VICTORY' : 'DEFEAT' }}</h2>
             
             <div class="winner-announce">
-                <div class="winner-avatar" v-if="winner?.character">
-                    <CharacterAvatar :character="winner.character" :size="100" />
-                </div>
+                <div class="winner-avatar">
+    <CharacterAvatar 
+        v-if="winner && (winner.character || playerProfiles[winner.uid]?.character)"
+        v-bind="playerProfiles[winner.uid]?.character || winner.character"
+        :size="150"
+        mode="face"
+    />
+</div>
                 <div class="winner-text">
                     Winner: <span class="winner-name">{{ winner?.nickname || winner?.name }}</span>
                 </div>
@@ -183,6 +195,7 @@ const myUid = computed(() => auth.currentUser?.uid); // 🔥 [FIX] Make reactive
 const selectedPlayerInfo = ref<any>(null);
 const showVsScreen = ref(true); // 🔥 [NEW] VS Screen state
 const winningLine = ref<{x: number, y: number}[]>([]); // 🔥 [NEW] Winning line coordinates
+const notificationMessage = ref(''); // 🔥 [NEW] Notification message
 
 // 🔥 [NEW] Player Profiles Cache (Character Data)
 const playerProfiles = ref<Record<string, any>>({});
@@ -242,8 +255,28 @@ watch(players, async (newPlayers) => {
 // Computed
 const amIWinner = computed(() => {
     if (!winner.value) return false;
-    // 🔥 [FIX] Robust comparison
-    return winner.value.uid === myUid.value || winner.value.sid === mySid;
+    
+    // 🔥 [FIX] Access auth/socket directly to ensure freshness
+    let mUid = auth.currentUser?.uid;
+    const currentSid = socket.id;
+    
+    // Fallback: Derive UID from players list if auth is missing
+    if (!mUid) {
+        const me = players.value.find(p => p.sid === currentSid);
+        if (me) mUid = me.uid;
+    }
+    
+    const wUid = winner.value.uid;
+    const wSid = winner.value.sid;
+    const mSid = currentSid;
+    
+    console.log(`🏆 [Debug] amIWinner Check: Winner(UID=${wUid}, SID=${wSid}) vs Me(UID=${mUid}, SID=${mSid})`);
+    
+    // Check UID match (primary) or SID match (fallback)
+    const isWinner = (wUid && mUid && wUid === mUid) || (wSid && mSid && wSid === mSid);
+    console.log(`🏆 [Debug] Result: ${isWinner}`);
+    
+    return isWinner;
 });
 
 // ... (timer logic)
@@ -260,14 +293,15 @@ function isWinningStone(x: number, y: number) {
 
   // 4. Listen for game over
   socket.on('game_over', (data) => {
-      console.log("🔥 [GAME OVER] Data:", data);
+      console.log("🔥 [GAME OVER] Data Received:", data);
+      console.log(`🔍 [Debug] Reason: ${data.reason}, WinningLine: ${data.winningLine?.length}`);
+      console.log(`🔍 [Debug] Winner:`, data.winner);
       
       // 🔥 [NEW] Spotlight Effect
       // Check if winningLine exists and has length
       if (data.winningLine && data.winningLine.length > 0) {
           console.log("✨ Winning Line received:", data.winningLine);
           winningLine.value = data.winningLine.map((coord: any) => ({ x: coord[0], y: coord[1] }));
-          console.log("✨ Parsed Winning Line:", winningLine.value);
           
           // Delay showing the result overlay
           setTimeout(() => {
@@ -278,13 +312,41 @@ function isWinningStone(x: number, y: number) {
               if (timerInterval) clearInterval(timerInterval);
           }, 2000); // 2 seconds delay
       } else {
-          console.log("⚠️ No winning line data (Immediate Game Over)");
-          // Immediate show if no winning line (e.g. timeout/disconnect)
-          winner.value = data.winner;
-          payouts.value = data.payouts || [];
-          gameOverReason.value = data.reason || 'normal';
-          phase.value = 'GAME_OVER';
-          if (timerInterval) clearInterval(timerInterval);
+          // 🔥 [FIX] If no winning line, it MUST be a forfeit/leave (or timeout)
+          // Treat ALL such cases as 'player_left' for animation purposes
+          
+          // 🔥 [FIX] Robust UID Check: Use auth OR derived from players list via socket.id
+          let myUid = auth.currentUser?.uid;
+          if (!myUid) {
+              const me = players.value.find(p => p.sid === socket.id);
+              if (me) {
+                  myUid = me.uid;
+                  console.log(`🔍 [Debug] Derived myUid from players list: ${myUid}`);
+              }
+          }
+          
+          const winnerUid = data.winner.uid;
+          
+          console.log(`🔍 [Debug] Forfeit/Timeout Detected. Me=${myUid}, Winner=${winnerUid}`);
+          
+          if (myUid === winnerUid) {
+              notificationMessage.value = "상대방이 나갔습니다.";
+          } else {
+              notificationMessage.value = "기권하였습니다.";
+          }
+
+          // 1. Show Notification (2s)
+          setTimeout(() => {
+              notificationMessage.value = "";
+              
+              // 2. Show Result
+              console.log("⏰ [Debug] Showing Result Overlay");
+              winner.value = data.winner;
+              payouts.value = data.payouts || [];
+              gameOverReason.value = data.reason || 'player_left';
+              phase.value = 'GAME_OVER';
+              if (timerInterval) clearInterval(timerInterval);
+          }, 2000);
       }
   });
 // (isMyTurn removed from here, defined below)
@@ -694,6 +756,7 @@ onUnmounted(() => {
     100% { transform: scale(1); }
 }
 
+/* --- Game Over Overlay (Polished) --- */
 .game-over-overlay {
     position: fixed;
     top: 0;
@@ -704,26 +767,62 @@ onUnmounted(() => {
     display: flex;
     justify-content: center;
     align-items: center;
-    z-index: 9999; /* 🔥 Ensure it's on top of everything */
-    backdrop-filter: blur(5px);
+    z-index: 9999;
+    backdrop-filter: blur(10px);
     animation: fadeIn 0.5s ease;
 }
 
 .result-card {
-    background: #2c3e50;
-    padding: 40px;
-    border-radius: 20px;
-    box-shadow: 0 0 50px rgba(0,0,0,0.5);
+    background: rgba(44, 62, 80, 0.9);
+    padding: 50px;
+    border-radius: 30px;
+    box-shadow: 0 0 60px rgba(0,0,0,0.7), inset 0 0 0 1px rgba(255, 255, 255, 0.1);
     text-align: center;
-    border: 2px solid #ffd700;
-    min-width: 500px; /* Wider for better layout */
+    border: 1px solid rgba(255, 215, 0, 0.3);
+    min-width: 550px;
+    transform: scale(0.9);
+    animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.result-card.victory {
+    border-color: #ffd700;
+    box-shadow: 0 0 60px rgba(255, 215, 0, 0.2), inset 0 0 0 1px rgba(255, 215, 0, 0.3);
+}
+
+.result-card.defeat {
+    border-color: #e74c3c;
+    box-shadow: 0 0 60px rgba(231, 76, 60, 0.2), inset 0 0 0 1px rgba(231, 76, 60, 0.3);
+}
+
+.result-icon {
+    font-size: 5rem;
+    margin-bottom: 10px;
+    filter: drop-shadow(0 0 20px rgba(255,255,255,0.5));
+    animation: float 3s ease-in-out infinite;
 }
 
 .result-card h2 {
-    color: #ffd700;
-    font-size: 3rem;
+    font-size: 3.5rem;
     margin-bottom: 30px;
-    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    font-weight: 900;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    background: linear-gradient(to bottom, #fff, #ccc);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+}
+
+.result-card.victory h2 {
+    background: linear-gradient(to bottom, #ffd700, #f1c40f);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.result-card.defeat h2 {
+    background: linear-gradient(to bottom, #e74c3c, #c0392b);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
 }
 
 .winner-announce {
@@ -734,14 +833,23 @@ onUnmounted(() => {
     margin-bottom: 40px;
 }
 
+.winner-avatar {
+    position: relative;
+    padding: 5px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ffd700, #f1c40f);
+    box-shadow: 0 0 30px rgba(255, 215, 0, 0.4);
+}
+
 .winner-text {
-    font-size: 1.8rem;
-    color: #fff;
+    font-size: 1.5rem;
+    color: #ccc;
 }
 
 .winner-name {
-    color: #ffd700;
+    color: #fff;
     font-weight: bold;
+    font-size: 1.8rem;
 }
 
 .payout-list {
@@ -749,35 +857,42 @@ onUnmounted(() => {
     flex-direction: column;
     gap: 15px;
     margin-bottom: 40px;
+    width: 100%;
 }
 
 .payout-item {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: rgba(0, 0, 0, 0.3);
+    background: rgba(0, 0, 0, 0.4);
     padding: 15px 25px;
-    border-radius: 12px;
+    border-radius: 15px;
     font-size: 1.2rem;
+    transition: transform 0.2s;
+}
+
+.payout-item:hover {
+    transform: scale(1.02);
+    background: rgba(255, 255, 255, 0.1);
 }
 
 .payout-item.winner {
-    background: linear-gradient(90deg, rgba(255, 215, 0, 0.1), rgba(255, 215, 0, 0.2));
-    border: 1px solid rgba(255, 215, 0, 0.5);
+    border-left: 5px solid #ffd700;
+    background: linear-gradient(90deg, rgba(255, 215, 0, 0.1), transparent);
 }
 
 .payout-item.loser {
-    background: linear-gradient(90deg, rgba(231, 76, 60, 0.1), rgba(231, 76, 60, 0.2));
-    border: 1px solid rgba(231, 76, 60, 0.5);
+    border-left: 5px solid #e74c3c;
+    background: linear-gradient(90deg, rgba(231, 76, 60, 0.1), transparent);
 }
 
 .p-info {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 15px;
 }
 
-.p-rank { font-size: 1.5rem; }
+.p-rank { font-size: 1.8rem; }
 .p-name { font-weight: bold; color: #fff; }
 
 .p-result {
@@ -787,33 +902,68 @@ onUnmounted(() => {
 }
 
 .p-change {
-    font-size: 1.3rem;
+    font-size: 1.4rem;
     font-weight: bold;
 }
 
-.p-change.plus { color: #2ecc71; text-shadow: 0 0 5px rgba(46, 204, 113, 0.5); }
-.p-change.minus { color: #e74c3c; }
+.p-change.plus { color: #2ecc71; text-shadow: 0 0 10px rgba(46, 204, 113, 0.4); }
+.p-change.minus { color: #e74c3c; text-shadow: 0 0 10px rgba(231, 76, 60, 0.4); }
 
 .p-total {
     font-size: 0.9rem;
-    color: #aaa;
+    color: #888;
 }
 
 .home-btn {
     background: linear-gradient(135deg, #3498db, #2980b9);
     color: white;
     border: none;
-    padding: 15px 50px;
-    border-radius: 30px;
-    font-size: 1.3rem;
+    padding: 18px 60px;
+    border-radius: 50px;
+    font-size: 1.4rem;
     font-weight: bold;
     cursor: pointer;
-    transition: all 0.2s;
-    box-shadow: 0 4px 15px rgba(52, 152, 219, 0.4);
+    transition: all 0.3s;
+    box-shadow: 0 10px 30px rgba(52, 152, 219, 0.4);
+    text-transform: uppercase;
+    letter-spacing: 1px;
 }
 
 .home-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(52, 152, 219, 0.6);
+    transform: translateY(-3px);
+    box-shadow: 0 15px 40px rgba(52, 152, 219, 0.6);
+    filter: brightness(1.1);
+}
+
+@keyframes popIn {
+    0% { transform: scale(0.8); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+}
+
+/* --- Notification Overlay --- */
+.notification-overlay {
+    position: fixed;
+    top: 20%;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10000;
+    animation: fadeIn 0.3s ease;
+}
+
+.notification-content {
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    padding: 15px 30px;
+    border-radius: 30px;
+    font-size: 1.5rem;
+    font-weight: bold;
+    border: 2px solid #ffd700;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+    text-align: center;
 }
 </style>

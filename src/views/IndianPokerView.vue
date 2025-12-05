@@ -142,7 +142,7 @@
                     <div class="comp-avatar-wrapper">
                         <CharacterAvatar v-if="me?.character" v-bind="me.character" :size="100" mode="face" :isWinner="myChips > opponentChips" />
                     </div>
-                    <div class="comp-name">ME</div>
+                    <div class="comp-name">{{ me?.nickname || 'Me' }}</div>
                     <div class="comp-chips">{{ myChips.toLocaleString() }}</div>
                 </div>
                 <div class="comp-vs">VS</div>
@@ -150,7 +150,7 @@
                     <div class="comp-avatar-wrapper">
                         <CharacterAvatar v-if="opponent?.character" v-bind="opponent.character" :size="100" mode="face" :isWinner="opponentChips > myChips" />
                     </div>
-                    <div class="comp-name">OPPONENT</div>
+                    <div class="comp-name">{{ opponent?.nickname || 'Opponent' }}</div>
                     <div class="comp-chips">{{ opponentChips.toLocaleString() }}</div>
                 </div>
             </div>
@@ -331,6 +331,7 @@ const hands = ref<any>({});
 const currentTurnUid = ref('');
 const lastAction = ref<any>(null); // 🔥 Restored missing state
 const isCheckingWinner = ref(false);
+const pendingFinalChips = ref<Record<string, number> | null>(null); // 🔥 Store final chips for animation
 const notificationMessage = ref(''); // 🔥 New state for game over notification
 const gameOver = ref(false);
 const winnerUid = ref<string | null>(null);
@@ -512,8 +513,9 @@ function manualRefresh() {
 
 function leaveGame() {
     if (confirm("정말 게임을 나가시겠습니까? 패배 처리될 수 있습니다.")) {
-        socket.emit('leave_game', { roomId, uid: auth.currentUser?.uid });
-        router.push('/game-lobby');
+        // 🔥 [FIX] Use surrender action to trigger IndianPokerHandler.leave_game (with chip transfer)
+        socket.emit('indian_poker:action', { roomId, action: 'surrender' });
+        // Wait for Game Over event
     }
 }
 
@@ -548,7 +550,7 @@ function showToast(nickname: string, action: string) {
 function startLocalTimer(duration: number) {
     if (timerInterval) clearInterval(timerInterval);
     timeLeft.value = duration;
-    maxTime.value = 30; // Default max time
+    maxTime.value = duration;
     
     timerInterval = window.setInterval(() => {
         if (timeLeft.value > 0) {
@@ -557,6 +559,13 @@ function startLocalTimer(duration: number) {
             if (timerInterval) clearInterval(timerInterval);
         }
     }, 1000);
+}
+
+function stopLocalTimer() {
+    if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
 }
 
 // --- Animation Functions ---
@@ -746,7 +755,14 @@ onMounted(() => {
 
         currentRound.value = data.round;
         pot.value = data.pot;
-        chips.value = repairedChips;
+        
+        // 🔥 [FIX] Delay chip update for Game Over animation
+        if (data.phase === 'GAME_OVER') {
+            pendingFinalChips.value = repairedChips;
+        } else {
+            chips.value = repairedChips;
+        }
+
         currentBets.value = data.currentBets;
         currentTurnUid.value = data.currentTurnUid;
         phase.value = data.phase;
@@ -824,24 +840,109 @@ onMounted(() => {
     socket.on('game_over', (data) => {
         console.log("🏁 Game Over Received. Waiting for animations...");
         
-        let delay = 0;
+        let notificationDelay = 0;
+        let notificationDuration = 0;
 
-        // 🔥 [FIX] Show Notification FIRST (Opponent Left / Turn Limit)
-        if (data.reason === 'player_left' || data.reason === 'turn_limit') {
-            if (data.reason === 'player_left') {
+        // 🔥 [FIX] Configure Notification based on reason
+        if (data.reason === 'player_left') {
+            const myUid = auth.currentUser?.uid;
+            const winnerUid = data.winner.uid;
+            console.log(`🔍 [Debug] Notification Logic: Me=${myUid}, Winner=${winnerUid}, Match=${myUid === winnerUid}`);
+            
+            if (myUid === winnerUid) {
                 notificationMessage.value = "상대방이 나갔습니다.";
-            } else if (data.reason === 'turn_limit') {
-                notificationMessage.value = "턴 제한이 종료되었습니다.";
+            } else {
+                notificationMessage.value = "기권하였습니다.";
             }
             
-            // Show notification for 2 seconds
-            delay = 2000;
+            // 1. Show Notification (2s)
             setTimeout(() => {
-                notificationMessage.value = ''; // Hide notification
+                notificationMessage.value = ""; // Hide notification
+                
+                // 2. Chip Transfer Animation (Loser -> Winner)
+                const loserUid = players.value.find(p => p.uid !== winnerUid)?.uid;
+                if (loserUid) {
+                    const winnerAvatar = myUid === winnerUid ? myAvatarRef.value : opponentAvatarRef.value;
+                    const loserAvatar = myUid === loserUid ? myAvatarRef.value : opponentAvatarRef.value;
+                    
+                    // Fallback to area if avatar missing
+                    const startEl = loserAvatar || (myUid === loserUid ? myAreaRef.value : opponentAreaRef.value);
+                    const endEl = winnerAvatar || (myUid === winnerUid ? myAreaRef.value : opponentAreaRef.value);
+                    
+                    if (startEl && endEl) {
+                        animateChips(startEl, endEl, 20); // Massive flow
+                    }
+                }
+
+                // 3. Update Chips & Show Comparison (After 1.5s animation)
+                setTimeout(() => {
+                    if (pendingFinalChips.value) {
+                        chips.value = pendingFinalChips.value;
+                    }
+                    isCheckingWinner.value = true;
+
+                    // 4. Show Victory/Defeat UI (After 2s comparison)
+                    setTimeout(() => {
+                        isCheckingWinner.value = false;
+                        
+                        // Final Game Over UI
+                        winner.value = data.winner;
+                        payouts.value = data.payouts;
+                        gameOver.value = true;
+                        
+                        // Stop Timer
+                        stopLocalTimer();
+                    }, 2000);
+                }, 1500);
             }, 2000);
+            
+            return; // 🔥 Exit early, don't run the default logic below
+        } else if (data.reason === 'turn_limit') {
+            notificationMessage.value = "모든 라운드가 종료되었습니다.";
+            notificationDelay = 3000; // Wait for round result animations (Card Reveal + Pot Win)
+            notificationDuration = 3000; // Show longer
         }
 
-        // 1. Wait for "Pot Win" animation (or Notification) to finish
+        // Schedule Notification
+        if (notificationDuration > 0) {
+            setTimeout(() => {
+                // Show notification
+                // (The v-if="notificationMessage" in template will trigger)
+                // We need to ensure we don't clear it too early if we set it here.
+                // Actually, we set the value here, but we need to clear it after duration.
+                
+                // Re-set value here to be safe (or it's already set above? No, above sets it immediately)
+                // Wait, if I set it above, it shows immediately.
+                // I should set it INSIDE the timeout if delay > 0.
+                
+                // Let's refactor:
+                // We set the message string in a temp var, then apply it in timeout.
+            }, notificationDelay);
+        }
+        
+        // Refactored Logic:
+        const message = data.reason === 'player_left' ? "상대방이 나갔습니다." : 
+                        data.reason === 'turn_limit' ? "모든 라운드가 종료되었습니다." : "";
+        
+        if (message) {
+            setTimeout(() => {
+                notificationMessage.value = message;
+                
+                // Hide after duration
+                setTimeout(() => {
+                    notificationMessage.value = '';
+                }, notificationDuration);
+            }, notificationDelay);
+        }
+
+        // Schedule Chip Comparison
+        // Total wait = notificationDelay + notificationDuration + buffer?
+        // Actually, Chip Comparison should start AFTER notification finishes?
+        // Or concurrently? User said "Notification ... THEN ...".
+        // So Chip Comparison starts at: notificationDelay + notificationDuration.
+        
+        const chipComparisonStartTime = (message ? (notificationDelay + notificationDuration) : 1500);
+
         setTimeout(() => {
             console.log("📊 Showing Chip Comparison...");
             // 2. Show Chip Comparison Phase
@@ -857,7 +958,7 @@ onMounted(() => {
                 
                 if (timerInterval) clearInterval(timerInterval);
             }, 3000);
-        }, 1500 + delay); // Base animation delay + Notification delay
+        }, chipComparisonStartTime);
     });
 
 });
@@ -1452,7 +1553,7 @@ onUnmounted(() => {
     cursor: pointer;
 }
 
-/* --- Game Over Overlay (Omok Style) --- */
+/* --- Game Over Overlay (Polished) --- */
 .game-over-overlay {
     position: fixed;
     top: 0;
@@ -1464,25 +1565,61 @@ onUnmounted(() => {
     justify-content: center;
     align-items: center;
     z-index: 9999;
-    backdrop-filter: blur(5px);
+    backdrop-filter: blur(10px);
     animation: fadeIn 0.5s ease;
 }
 
 .result-card {
-    background: #2c3e50;
-    padding: 40px;
-    border-radius: 20px;
-    box-shadow: 0 0 50px rgba(0,0,0,0.5);
+    background: rgba(44, 62, 80, 0.9);
+    padding: 50px;
+    border-radius: 30px;
+    box-shadow: 0 0 60px rgba(0,0,0,0.7), inset 0 0 0 1px rgba(255, 255, 255, 0.1);
     text-align: center;
-    border: 2px solid #ffd700;
-    min-width: 500px;
+    border: 1px solid rgba(255, 215, 0, 0.3);
+    min-width: 550px;
+    transform: scale(0.9);
+    animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+.result-card.victory {
+    border-color: #ffd700;
+    box-shadow: 0 0 60px rgba(255, 215, 0, 0.2), inset 0 0 0 1px rgba(255, 215, 0, 0.3);
+}
+
+.result-card.defeat {
+    border-color: #e74c3c;
+    box-shadow: 0 0 60px rgba(231, 76, 60, 0.2), inset 0 0 0 1px rgba(231, 76, 60, 0.3);
+}
+
+.result-icon {
+    font-size: 5rem;
+    margin-bottom: 10px;
+    filter: drop-shadow(0 0 20px rgba(255,255,255,0.5));
+    animation: float 3s ease-in-out infinite;
 }
 
 .result-card h2 {
-    color: #ffd700;
-    font-size: 3rem;
+    font-size: 3.5rem;
     margin-bottom: 30px;
-    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    font-weight: 900;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    background: linear-gradient(to bottom, #fff, #ccc);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+}
+
+.result-card.victory h2 {
+    background: linear-gradient(to bottom, #ffd700, #f1c40f);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.result-card.defeat h2 {
+    background: linear-gradient(to bottom, #e74c3c, #c0392b);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
 }
 
 .winner-announce {
@@ -1493,14 +1630,23 @@ onUnmounted(() => {
     margin-bottom: 40px;
 }
 
+.winner-avatar {
+    position: relative;
+    padding: 5px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #ffd700, #f1c40f);
+    box-shadow: 0 0 30px rgba(255, 215, 0, 0.4);
+}
+
 .winner-text {
-    font-size: 1.8rem;
-    color: #fff;
+    font-size: 1.5rem;
+    color: #ccc;
 }
 
 .winner-name {
-    color: #ffd700;
+    color: #fff;
     font-weight: bold;
+    font-size: 1.8rem;
 }
 
 .payout-list {
@@ -1508,35 +1654,42 @@ onUnmounted(() => {
     flex-direction: column;
     gap: 15px;
     margin-bottom: 40px;
+    width: 100%;
 }
 
 .payout-item {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: rgba(0, 0, 0, 0.3);
+    background: rgba(0, 0, 0, 0.4);
     padding: 15px 25px;
-    border-radius: 12px;
+    border-radius: 15px;
     font-size: 1.2rem;
+    transition: transform 0.2s;
+}
+
+.payout-item:hover {
+    transform: scale(1.02);
+    background: rgba(255, 255, 255, 0.1);
 }
 
 .payout-item.winner {
-    background: linear-gradient(90deg, rgba(255, 215, 0, 0.1), rgba(255, 215, 0, 0.2));
-    border: 1px solid rgba(255, 215, 0, 0.5);
+    border-left: 5px solid #ffd700;
+    background: linear-gradient(90deg, rgba(255, 215, 0, 0.1), transparent);
 }
 
 .payout-item.loser {
-    background: linear-gradient(90deg, rgba(231, 76, 60, 0.1), rgba(231, 76, 60, 0.2));
-    border: 1px solid rgba(231, 76, 60, 0.5);
+    border-left: 5px solid #e74c3c;
+    background: linear-gradient(90deg, rgba(231, 76, 60, 0.1), transparent);
 }
 
 .p-info {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 15px;
 }
 
-.p-rank { font-size: 1.5rem; }
+.p-rank { font-size: 1.8rem; }
 .p-name { font-weight: bold; color: #fff; }
 
 .p-result {
@@ -1546,38 +1699,47 @@ onUnmounted(() => {
 }
 
 .p-change {
-    font-size: 1.3rem;
+    font-size: 1.4rem;
     font-weight: bold;
 }
 
-.p-change.plus { color: #2ecc71; text-shadow: 0 0 5px rgba(46, 204, 113, 0.5); }
-.p-change.minus { color: #e74c3c; }
+.p-change.plus { color: #2ecc71; text-shadow: 0 0 10px rgba(46, 204, 113, 0.4); }
+.p-change.minus { color: #e74c3c; text-shadow: 0 0 10px rgba(231, 76, 60, 0.4); }
 
 .p-total {
     font-size: 0.9rem;
-    color: #aaa;
+    color: #888;
 }
 
 .home-btn {
-    padding: 15px 40px;
-    font-size: 1.2rem;
-    font-weight: bold;
-    background: #ffd700;
-    color: black;
+    background: linear-gradient(135deg, #3498db, #2980b9);
+    color: white;
     border: none;
-    border-radius: 30px;
+    padding: 18px 60px;
+    border-radius: 50px;
+    font-size: 1.4rem;
+    font-weight: bold;
     cursor: pointer;
     transition: all 0.3s;
+    box-shadow: 0 10px 30px rgba(52, 152, 219, 0.4);
+    text-transform: uppercase;
+    letter-spacing: 1px;
 }
 
 .home-btn:hover {
-    transform: scale(1.05);
-    box-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+    transform: translateY(-3px);
+    box-shadow: 0 15px 40px rgba(52, 152, 219, 0.6);
+    filter: brightness(1.1);
 }
 
 @keyframes popIn {
-    from { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
-    to { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+    0% { transform: scale(0.8); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
 }
 
 .round-indicator {
