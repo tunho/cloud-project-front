@@ -157,11 +157,18 @@
         </div>
     </div>
 
+    <!-- 📢 Notification Overlay (New) -->
+    <div v-if="notificationMessage" class="notification-overlay">
+        <div class="notification-content">
+            {{ notificationMessage }}
+        </div>
+    </div>
+
     <!-- 🏁 Game Over Overlay (Omok Style) -->
     <div v-if="gameOver" class="game-over-overlay">
         <div class="result-card" :class="{ victory: amIWinner, defeat: !amIWinner }">
             <div class="result-icon">{{ amIWinner ? '🏆' : '🏁' }}</div>
-            <h2>{{ amIWinner ? 'VICTORY' : 'GAME OVER' }}</h2>
+            <h2>{{ amIWinner ? 'VICTORY' : 'DEFEAT' }}</h2>
             
             <div class="winner-announce">
                 <div class="winner-avatar">
@@ -173,15 +180,7 @@
                 <div class="winner-text">
                     Winner: <span class="winner-name">{{ winner?.nickname || 'Unknown' }}</span>
                 </div>
-                <div class="reason-text" v-if="gameOverReason === 'bankruptcy'">
-                    (파산)
-                </div>
-                <div class="reason-text" v-if="gameOverReason === 'turn_limit'">
-                    (턴 제한 초과)
-                </div>
-                <div class="reason-text" v-if="gameOverReason === 'player_left'">
-                    (상대방 나감)
-                </div>
+                <!-- 🔥 Reason removed from final UI as requested -->
             </div>
             
             <div class="payout-list" v-if="payouts.length > 0">
@@ -330,7 +329,9 @@ const currentBets = ref<any>({});
 const phase = ref('BETTING');
 const hands = ref<any>({});
 const currentTurnUid = ref('');
-const lastAction = ref<any>(null);
+const lastAction = ref<any>(null); // 🔥 Restored missing state
+const isCheckingWinner = ref(false);
+const notificationMessage = ref(''); // 🔥 New state for game over notification
 const gameOver = ref(false);
 const winnerUid = ref<string | null>(null);
 const showVsScreen = ref(false);
@@ -346,7 +347,6 @@ const maxTime = ref(30);
 let timerInterval: number | null = null;
 
 // Animation State
-const isCheckingWinner = ref(false); // New state for chip comparison
 const cardsDealt = ref(false);
 const flyingObjects = ref<any[]>([]);
 const showActionToast = ref(false);
@@ -518,7 +518,22 @@ function leaveGame() {
 }
 
 function goHome() {
-    router.push('/game-lobby');
+    // If game is over, just leave
+    if (gameOver.value) {
+        router.push('/game-lobby');
+        return;
+    }
+
+    // If game is active, ask for confirmation
+    if (confirm("게임을 나가시겠습니까? 패배 처리됩니다.")) {
+        // Emit surrender action to server
+        // Server will trigger Game Over -> Defeat UI
+        socket.emit('indian_poker:action', { roomId, action: 'surrender' });
+        
+        // We don't push to lobby here. We wait for Game Over UI.
+        // The Game Over UI has a "Lobby" button which calls goHome again, 
+        // catching the first if(gameOver.value) block.
+    }
 }
 
 function showToast(nickname: string, action: string) {
@@ -738,6 +753,11 @@ onMounted(() => {
         lastAction.value = data.lastAction;
         hands.value = repairedHands;
         
+        // 🔥 [FIX] Update players list to get fresh data (major, year, etc.)
+        if (data.players) {
+            players.value = data.players;
+        }
+        
         // Start Timer
         if (data.timeLeft) {
             startLocalTimer(data.timeLeft);
@@ -785,9 +805,14 @@ onMounted(() => {
                              // Clear cards before next round starts
                              cardsDealt.value = false;
                              
-                             if (isMyTurn.value || me.value?.uid === data.winnerUid) {
+                             // 🔥 [FIX] Only one client should trigger next round to prevent double Ante deduction
+                             const isWinner = me.value?.uid === data.winnerUid;
+                             const isDraw = !data.winnerUid;
+                             const isHost = players.value.length > 0 && players.value[0].uid === me.value?.uid;
+
+                             if (isWinner || (isDraw && isHost)) {
+                                 console.log("🚀 Triggering next round...");
                                  socket.emit('indian_poker:next_round', { roomId });
-                                 // Reset for next round is handled in update_state
                              }
                         }, 1000);
                     }
@@ -799,7 +824,24 @@ onMounted(() => {
     socket.on('game_over', (data) => {
         console.log("🏁 Game Over Received. Waiting for animations...");
         
-        // 1. Wait for "Pot Win" animation to finish (Increased to 3.5s)
+        let delay = 0;
+
+        // 🔥 [FIX] Show Notification FIRST (Opponent Left / Turn Limit)
+        if (data.reason === 'player_left' || data.reason === 'turn_limit') {
+            if (data.reason === 'player_left') {
+                notificationMessage.value = "상대방이 나갔습니다.";
+            } else if (data.reason === 'turn_limit') {
+                notificationMessage.value = "턴 제한이 종료되었습니다.";
+            }
+            
+            // Show notification for 2 seconds
+            delay = 2000;
+            setTimeout(() => {
+                notificationMessage.value = ''; // Hide notification
+            }, 2000);
+        }
+
+        // 1. Wait for "Pot Win" animation (or Notification) to finish
         setTimeout(() => {
             console.log("📊 Showing Chip Comparison...");
             // 2. Show Chip Comparison Phase
@@ -812,10 +854,12 @@ onMounted(() => {
                 winner.value = data.winner;
                 payouts.value = data.payouts || [];
                 gameOverReason.value = data.reason || 'normal';
+                
                 if (timerInterval) clearInterval(timerInterval);
             }, 3000);
-        }, 2000);
+        }, 1500 + delay); // Base animation delay + Notification delay
     });
+
 });
 
 onUnmounted(() => {
@@ -1666,5 +1710,31 @@ onUnmounted(() => {
     font-weight: 900;
     font-style: italic;
     color: #e74c3c;
+}
+.notification-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 3000;
+    animation: fadeIn 0.3s ease-out;
+}
+
+.notification-content {
+    background: rgba(20, 20, 20, 0.9);
+    border: 2px solid #ffd700;
+    padding: 2rem 4rem;
+    border-radius: 15px;
+    color: #ffd700;
+    font-size: 2rem;
+    font-weight: bold;
+    text-align: center;
+    box-shadow: 0 0 30px rgba(255, 215, 0, 0.3);
+    animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 </style>
