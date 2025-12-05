@@ -8,6 +8,14 @@
         @finish="handleVsScreenFinish" 
     />
 
+    <!-- ℹ️ Player Info Modal -->
+    <PlayerInfoModal
+        v-if="showPlayerInfoModal"
+        :isOpen="showPlayerInfoModal"
+        :player="selectedPlayerInfo"
+        @close="showPlayerInfoModal = false"
+    />
+
     <!-- 🔥 Exit Button -->
     <button class="exit-btn" @click="leaveGame">
         <span class="icon">🚪</span> 나가기
@@ -30,6 +38,7 @@
             <div v-if="obj.type === 'chip'" class="flying-chip">🪙</div>
         </div>
     </div>
+</div>
 
     <!-- 🔢 Round Indicator -->
     <div class="round-indicator" :class="{ 'hidden': showVsScreen }">
@@ -38,31 +47,37 @@
 
     <!-- 🔴 Opponent Area -->
     <div class="player-area opponent" ref="opponentAreaRef">
-        <div class="player-card" :class="{ 'active-turn': currentTurnUid === opponent?.uid }">
-            <div class="avatar-container" ref="opponentAvatarRef">
-                <CharacterAvatar 
-                    v-if="opponent?.character" 
-                    v-bind="opponent.character" 
-                    :size="80" 
-                    mode="face" 
-                />
-                <div v-else class="avatar-placeholder">{{ opponent?.nickname?.[0] || '?' }}</div>
-            </div>
-            <div class="player-info">
-                <div class="nickname">{{ opponent?.nickname || 'Waiting...' }}</div>
-                <div class="stake"><span class="bet-icon">⛃</span> {{ (opponent?.entryBet || 1000).toLocaleString() }}</div>
-                <div class="chips-container">
-                    <div class="chip-stack">
-                        <div v-for="n in Math.min(5, Math.ceil(opponentChips / 1000))" :key="n" class="chip" :style="{ bottom: `${n * 2}px` }"></div>
-                    </div>
-                    <div class="chips-text">{{ opponentChips.toLocaleString() }}</div>
+        <div class="player-card-wrapper">
+            <div class="player-card" :class="{ 'active-turn': currentTurnUid === opponent?.uid }">
+                <div class="avatar-container" ref="opponentAvatarRef">
+                    <CharacterAvatar 
+                        v-if="opponent?.character" 
+                        v-bind="opponent.character" 
+                        :size="80" 
+                        mode="face" 
+                    />
+                    <div v-else class="avatar-placeholder">{{ opponent?.nickname?.[0] || '?' }}</div>
                 </div>
-                <div class="bet" v-if="opponentBet > 0">Bet: {{ opponentBet }}</div>
+                <div class="player-info">
+                    <div class="nickname">{{ opponent?.nickname || 'Waiting...' }}</div>
+                    <div class="stake"><span class="bet-icon">⛃</span> {{ (opponent?.entryBet || 10000).toLocaleString() }}</div>
+                    <div class="chips-container">
+                        <div class="chip-stack">
+                            <div v-for="n in Math.min(5, Math.ceil(opponentChips / 1000))" :key="n" class="chip" :style="{ bottom: `${n * 2}px` }"></div>
+                        </div>
+                        <div class="chips-text">{{ opponentChips.toLocaleString() }}</div>
+                    </div>
+                    <div class="bet" v-if="opponentBet > 0">Bet: {{ opponentBet }}</div>
+                </div>
+                <!-- Timer Bar -->
+                <div class="timer-bar-container" v-if="currentTurnUid === opponent?.uid">
+                    <div class="timer-bar" :style="{ width: `${(timeLeft / maxTime) * 100}%` }"></div>
+                </div>
             </div>
-            <!-- Timer Bar -->
-            <div class="timer-bar-container" v-if="currentTurnUid === opponent?.uid">
-                <div class="timer-bar" :style="{ width: `${(timeLeft / maxTime) * 100}%` }"></div>
-            </div>
+            <!-- 👁️ Profile Button (Opponent) -->
+            <button class="profile-view-btn" @click.stop="viewProfile(opponent)">
+                👁️
+            </button>
         </div>
     </div>
 
@@ -103,10 +118,17 @@
         </div>
     </div>
 
-    <!-- 📢 Action Indicator -->
+    <!-- 📢 Action Indicator (Unified Position) -->
     <div class="action-indicator" v-if="lastAction" :class="{'me': lastAction.uid === me?.uid, 'opponent': lastAction.uid !== me?.uid}">
-        <div class="action-text">{{ lastAction.bet_label || ((lastAction.action === 'CALL' && lastAction.amount === 0) ? 'CHECK' : lastAction.action) }}</div>
-        <div class="action-amount" v-if="lastAction.amount > 0 && lastAction.action !== 'FOLD'">+{{ lastAction.amount.toLocaleString() }}</div>
+        <div class="action-text">
+            {{ 
+                lastAction.bet_label ? lastAction.bet_label : 
+                (lastAction.action === 'CALL' && lastAction.amount === 0) ? 'CHECK' : 
+                (lastAction.action === 'FOLD' || lastAction.action === 'DIE') ? 'DIE' : 
+                lastAction.action 
+            }}
+        </div>
+        <div class="action-amount" v-if="lastAction.amount > 0 && lastAction.action !== 'FOLD' && lastAction.action !== 'DIE'">+{{ lastAction.amount.toLocaleString() }}</div>
     </div>
 
 
@@ -152,10 +174,13 @@
                     Winner: <span class="winner-name">{{ winner?.nickname || 'Unknown' }}</span>
                 </div>
                 <div class="reason-text" v-if="gameOverReason === 'bankruptcy'">
-                    (Bankruptcy)
+                    (파산)
                 </div>
                 <div class="reason-text" v-if="gameOverReason === 'turn_limit'">
-                    (Turn Limit Reached)
+                    (턴 제한 초과)
+                </div>
+                <div class="reason-text" v-if="gameOverReason === 'player_left'">
+                    (상대방 나감)
                 </div>
             </div>
             
@@ -182,33 +207,38 @@
 
     <!-- 🔵 My Area -->
     <div class="player-area me" ref="myAreaRef">
-        <div class="player-card" :class="{ 'active-turn': isMyTurn }">
-            <div class="avatar-container" ref="myAvatarRef">
-                <CharacterAvatar 
-                    v-if="me?.character" 
-                    v-bind="me.character" 
-                    :size="80" 
-                    mode="face" 
-                />
-                <div v-else class="avatar-placeholder">{{ me?.nickname?.[0] || 'M' }}</div>
-            </div>
-            <div class="player-info">
-                <div class="nickname">{{ me?.nickname || 'Me' }}</div>
-                <div class="stake"><span class="bet-icon">⛃</span> {{ (me?.entryBet || 1000).toLocaleString() }}</div>
-                 <div class="chips-container">
-                    <div class="chip-stack">
-                        <div v-for="n in Math.min(5, Math.ceil(myChips / 1000))" :key="n" class="chip" :style="{ bottom: `${n * 2}px` }"></div>
-                    </div>
-                    <div class="chips-text">{{ myChips.toLocaleString() }}</div>
+        <div class="player-card-wrapper">
+            <div class="player-card" :class="{ 'active-turn': isMyTurn }">
+                <div class="avatar-container" ref="myAvatarRef">
+                    <CharacterAvatar 
+                        v-if="me?.character" 
+                        v-bind="me.character" 
+                        :size="80" 
+                        mode="face" 
+                    />
+                    <div v-else class="avatar-placeholder">{{ me?.nickname?.[0] || 'M' }}</div>
                 </div>
-                <div class="bet" v-if="myBet > 0">Bet: {{ myBet }}</div>
+                <div class="player-info">
+                    <div class="nickname">{{ me?.nickname || 'Me' }}</div>
+                    <div class="stake"><span class="bet-icon">⛃</span> {{ (me?.entryBet || 10000).toLocaleString() }}</div>
+                     <div class="chips-container">
+                        <div class="chip-stack">
+                            <div v-for="n in Math.min(5, Math.ceil(myChips / 1000))" :key="n" class="chip" :style="{ bottom: `${n * 2}px` }"></div>
+                        </div>
+                        <div class="chips-text">{{ myChips.toLocaleString() }}</div>
+                    </div>
+                    <div class="bet" v-if="myBet > 0">Bet: {{ myBet }}</div>
+                    <!-- Timer Bar -->
+                    <div class="timer-bar-container" v-if="isMyTurn">
+                        <div class="timer-bar" :style="{ width: `${(timeLeft / maxTime) * 100}%` }"></div>
+                    </div>
+                </div>
             </div>
-            <!-- Timer Bar -->
-            <div class="timer-bar-container" v-if="isMyTurn">
-                <div class="timer-bar" :style="{ width: `${(timeLeft / maxTime) * 100}%` }"></div>
-            </div>
+            <!-- 👁️ Profile Button (Me) -->
+            <button class="profile-view-btn" @click.stop="viewProfile(me)">
+                👁️
+            </button>
         </div>
-
     </div>
 
     <!-- 🎮 Controls (Absolute Bottom) -->
@@ -249,7 +279,7 @@
         </div>
     </div>
 
-</div>
+
 
 </template>
 
@@ -260,6 +290,20 @@ import { useRouter, useRoute } from 'vue-router';
 import { auth } from '../firebase';
 import VsScreen from '../components/game/VsScreen.vue';
 import CharacterAvatar from '../components/CharacterAvatar.vue';
+import PlayerInfoModal from '../components/game/PlayerInfoModal.vue';
+
+interface Player {
+    uid: string;
+    nickname: string;
+    character?: any;
+    entryBet?: number;
+    money: number;
+    major?: string;
+    year?: number;
+    // Fields required by PlayerInfoModal
+    id: number;
+    name: string;
+}
 
 const router = useRouter();
 const route = useRoute();
@@ -308,6 +352,31 @@ const flyingObjects = ref<any[]>([]);
 const showActionToast = ref(false);
 const actionToastPlayer = ref('');
 const actionToastMessage = ref('');
+
+// Player Info Modal
+const showPlayerInfoModal = ref(false);
+const selectedPlayerInfo = ref<Player | null>(null);
+
+function viewProfile(player: any) {
+    console.log("🔍 [ViewProfile] Player Data:", player); // 🔥 Debug Log
+    if (!player) return;
+    // Map fields to satisfy PlayerInfoModal's Player interface
+    // id is required by Modal but we might only have uid. Use a dummy or hash if needed.
+    // name is required, map nickname to it.
+    const playerForModal: Player = { 
+        uid: player.uid,
+        nickname: player.nickname,
+        character: player.character,
+        entryBet: player.entryBet,
+        money: player.money ?? 0, // Use nullish coalescing and ensure number
+        major: player.major || '-',
+        year: player.year || 0,
+        id: player.id || 0,
+        name: player.nickname || player.name || 'Unknown'
+    };
+    selectedPlayerInfo.value = playerForModal;
+    showPlayerInfoModal.value = true;
+}
 
 // --- Computed ---
 const me = computed(() => {
@@ -612,8 +681,10 @@ onMounted(() => {
                     shouldAnimate = false;
                 }
 
-                // Skip animation for CHECK (Call 0)
-                if (data.lastAction.action === 'CALL' && data.lastAction.amount === 0) {
+                // Skip animation for CHECK (Call 0) or FOLD/DIE
+                if ((data.lastAction.action === 'CALL' && data.lastAction.amount === 0) || 
+                    data.lastAction.action === 'FOLD' || 
+                    data.lastAction.action === 'DIE') {
                     shouldAnimate = false;
                 }
 
@@ -872,6 +943,7 @@ onUnmounted(() => {
 }
 
 .player-card {
+    position: relative; /* For timer bar */
     display: flex;
     align-items: center;
     gap: 15px;
@@ -882,10 +954,12 @@ onUnmounted(() => {
     border: 1px solid rgba(255, 255, 255, 0.1);
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
     min-width: 280px;
+    overflow: hidden; /* Clip timer bar */
 }
 
 .avatar-container {
     position: relative;
+    overflow: visible; /* Ensure button is visible */
 }
 
 .avatar-placeholder {
@@ -914,6 +988,15 @@ onUnmounted(() => {
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 120px;
+    color: white; /* 🔥 Ensure visible */
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+}
+
+.bet {
+    font-size: 0.9rem;
+    color: #ffd700; /* Gold for bet */
+    font-weight: bold;
+    margin-top: 2px;
 }
 
 .stake {
@@ -933,6 +1016,23 @@ onUnmounted(() => {
     width: 20px;
     height: 20px;
 }
+
+/* --- Timer Bar --- */
+.timer-bar-container {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 6px;
+    background: rgba(0, 0, 0, 0.3);
+}
+
+.timer-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #2ecc71, #f1c40f);
+    transition: width 1s linear;
+}
+
 
 .chip {
     position: absolute;
@@ -979,7 +1079,7 @@ onUnmounted(() => {
 }
 
 .opponent-card {
-    top: 32%;
+    top: 20%; /* Moved further up */
 }
 
 .my-card {
@@ -1057,41 +1157,89 @@ onUnmounted(() => {
     z-index: 100;
 }
 
+/* --- Action Indicator (Unified Position) --- */
 .action-indicator {
     position: absolute;
-    top: 40%;
+    top: 35%; /* Between Opponent Card (20%) and Pot (Center) */
     left: 50%;
     transform: translate(-50%, -50%);
-    background: rgba(0, 0, 0, 0.8);
-    border: 2px solid #ffd700;
-    padding: 10px 20px;
-    border-radius: 12px;
-    text-align: center;
-    z-index: 500;
+    background: rgba(0, 0, 0, 0.85);
+    padding: 15px 30px;
+    border-radius: 50px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    z-index: 1000;
     animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    pointer-events: none;
+    min-width: 120px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
 }
 
 .action-indicator.me {
-    bottom: 40%;
-    top: auto;
+    border: 3px solid #2ecc71; /* Green for Me */
+    /* Removed bottom/top override to keep unified position */
 }
 
 .action-indicator.opponent {
-    top: 40%;
+    border: 3px solid #e74c3c; /* Red for Opponent */
+}
+
+.action-indicator.me .action-text {
+    color: #2ecc71;
+}
+
+.action-indicator.opponent .action-text {
+    color: #e74c3c;
 }
 
 .action-text {
-    font-size: 1.5rem;
-    font-weight: 800;
-    color: #ffd700;
+    font-size: 2rem;
+    font-weight: 900;
     text-transform: uppercase;
+    letter-spacing: 2px;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
 }
 
 .action-amount {
+    font-size: 1.2rem;
+    color: #ffd700;
+    font-weight: bold;
+}
+
+/* --- Profile View Button --- */
+.player-card-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 15px; /* Space between card and button */
+}
+
+.profile-view-btn {
+    /* Removed absolute positioning */
+    position: relative; 
+    top: auto;
+    left: auto;
+    transform: none;
+    margin-left: 0;
+    right: auto;
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     font-size: 1rem;
-    color: #fff;
-    margin-top: 5px;
+    cursor: pointer;
+    transition: all 0.2s;
+    z-index: 100;
+}
+
+.profile-view-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: scale(1.1);
 }
 
 @keyframes popIn {
