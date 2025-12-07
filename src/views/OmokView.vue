@@ -115,7 +115,7 @@
     <!-- Game Over Overlay (Davinci Style) -->
     <div v-if="phase === 'GAME_OVER'" class="game-over-overlay">
         <div class="result-card" :class="{ victory: amIWinner, defeat: !amIWinner }">
-            <div class="result-icon">{{ amIWinner ? '🏆' : '🏁' }}</div>
+            <div class="result-icon">{{ amIWinner ? '🏆' : '💀' }}</div>
             <h2>{{ amIWinner ? 'VICTORY' : 'DEFEAT' }}</h2>
             
             <div class="winner-announce">

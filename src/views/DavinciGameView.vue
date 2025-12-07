@@ -1,6 +1,6 @@
 <template>
   <div class="game-container">
-    <UserProfile />
+    <!-- <UserProfile /> Removed as per request -->
     <!-- 1. 게임 초기화 전 로딩 화면 -->
     <!-- 1. 게임 초기화 전 로딩 화면 (Game Start Overlay) -->
     <GameStartOverlay v-if="phase === 'INIT'" />
@@ -62,6 +62,13 @@
         :showResultModal="showResultModal"
         :guessResult="guessResult"
       />
+
+      <!-- 🔥 [NEW] Notification Overlay -->
+      <div v-if="notificationMessage" class="notification-overlay">
+        <div class="notification-content">
+            {{ notificationMessage }}
+        </div>
+      </div>
 
       <GameDrawUI
         v-if="isMyTurn && phase === 'DRAWING' && !showResultModal && !isInitialAnimationPlaying"
@@ -157,7 +164,7 @@ import FlyingCardOverlay from "../components/game/FlyingCardOverlay.vue";
 import GameOverModal from "../components/game/GameOverModal.vue";
 import GameStartOverlay from "../components/game/GameStartOverlay.vue"; // 🔥 [NEW]
 import PlayerInfoModal from "../components/game/PlayerInfoModal.vue";  // 🔥 [NEW]
-import UserProfile from "../components/UserProfile.vue"; // 🔥 Import
+// import UserProfile from "../components/UserProfile.vue"; // 🔥 Removed
 
 
 const route = useRoute();
@@ -185,6 +192,9 @@ const payouts = ref<any[]>([]); // 🔥 [FIX] Added payouts ref
 const isInitialAnimationPlaying = ref(false);
 const showTimeoutToast = ref(false);
 const timeoutToastMessage = ref("");
+const notificationMessage = ref(""); // 🔥 [NEW] Game Over Notification
+const notificationDelay = ref(0); // 🔥 [NEW] Delay for modal
+const gameOverReason = ref('normal'); // 🔥 [NEW] Game Over Reason
 
 const isExiting = ref(false); // 🔥 [추가] 종료 진행 중 플래그
 
@@ -728,7 +738,15 @@ function handlePayoutResult(results: any[]) {
   if (myData) {
     console.log("💰 [GameView] Found my result:", myData);
     myPayoutResult.value = myData;
-    showGameOverModal.value = true;
+    
+    // 🔥 [FIX] If 1v1 game, wait for game_over event to show modal (to allow notification/delay)
+    console.log(`💰 Checking 1v1 delay. Players: ${players.value.length}`);
+    if (players.value.length === 2) {
+        console.log("⏳ [1v1] Payout received, but waiting for game_over event...");
+    } else {
+        console.log("💰 Showing modal immediately (Not 1v1 or other condition)");
+        showGameOverModal.value = true;
+    }
   } else {
     console.warn("⚠️ [GameView] Could not find my payout result.");
     
@@ -736,7 +754,12 @@ function handlePayoutResult(results: any[]) {
     if (isExiting.value && results.length > 0) {
         console.log("   - Assuming first result is mine since I am exiting.");
         myPayoutResult.value = results[0];
-        showGameOverModal.value = true;
+        // 🔥 [FIX] If 1v1 game, wait for game_over event to show modal
+        if (players.value.length === 2) {
+             console.log("⏳ [1v1 Exit] Waiting for game_over event...");
+        } else {
+             showGameOverModal.value = true;
+        }
     }
   }
 }
@@ -771,7 +794,7 @@ function handleExitRoom() {
             console.warn("⚠️ [GameView] Leave timeout. Forcing exit.");
             router.replace("/platform");
         }
-    }, 3000);
+    }, 6000); // 🔥 [FIX] Increased timeout to allow for game_over notification (3s) + buffer
   }
 }
 
@@ -862,24 +885,7 @@ onMounted(async () => {
     }
   });
 
-  // 🔥 [NEW] 게임 종료 이벤트 리스너 (명시적 종료 처리)
-  socket.on("game_over", (data) => {
-    console.log("🏆 [GameView] Game Over:", data);
-    
-    // 🔥 [FIX] Populate payouts and myResult
-    if (data.payouts) {
-        payouts.value = data.payouts;
-        const myRes = data.payouts.find((p: any) => p.uid === (auth.currentUser?.uid));
-        if (myRes) {
-            myPayoutResult.value = myRes;
-        }
-    }
 
-    if (!showGameOverModal.value) {
-        console.log("   - Triggering Game Over Modal from game_over event");
-        showGameOverModal.value = true;
-    }
-  });
 
   // 🔥 [NEW] Add beforeunload listener
   window.addEventListener("beforeunload", handleBeforeUnload);
@@ -903,6 +909,48 @@ onMounted(async () => {
   onUnmounted(() => {
     unsubscribe();
   });
+  // 🔥 [NEW] Game Over Listener for 1v1 Exit Flow
+  socket.on('game_over', (data) => {
+      console.log("💀 Game Over Received:", data);
+      console.log("💀 Reason:", data.reason);
+      console.log("💀 Players Length:", players.value.length);
+
+      // 🔥 [FIX] Populate payouts and myResult (Robustness)
+      if (data.payouts) {
+          payouts.value = data.payouts;
+          const myRes = data.payouts.find((p: any) => p.uid === (auth.currentUser?.uid));
+          if (myRes) {
+              myPayoutResult.value = myRes;
+          }
+      }
+
+      // 🔥 [FIX] Set Game Over Reason
+      gameOverReason.value = data.reason || 'normal';
+      
+      // Only handle special 1v1 exit flow if reason is provided
+      if (data.reason && (data.reason === 'disconnect' || data.reason === 'timeout')) {
+          console.log("💀 Special 1v1 Exit Flow Triggered");
+          
+          // Determine notification message
+          if (isExiting.value) {
+               notificationMessage.value = "기권하였습니다.";
+          } else {
+               notificationMessage.value = "상대방이 나갔습니다.";
+          }
+          
+          // Show notification and Delay Modal
+          setTimeout(() => {
+              notificationMessage.value = "";
+              // Show Modal
+              showGameOverModal.value = true;
+          }, 3000);
+      } else {
+          console.log("💀 Normal Game Over Flow");
+          // Normal game over
+          showGameOverModal.value = true;
+      }
+  });
+
 });
 
 onUnmounted(() => {
@@ -913,6 +961,7 @@ onUnmounted(() => {
   socket.off("game:start_guess_animation");
   socket.off("game:prompt_continue");
   socket.off("game:payout_result"); // 🔥 [추가]
+  socket.off("game_over"); // 🔥 [FIX] Remove game_over listener to prevent duplicates
   
   // 🔥 [NEW] 리스너 해제
   window.removeEventListener("beforeunload", handleBeforeUnload);
@@ -1148,5 +1197,43 @@ function handleBeforeUnload(e: BeforeUnloadEvent) {
 .toast-leave-to {
   opacity: 0;
   transform: translate(-50%, -20px);
+}
+
+/* 🔥 [NEW] Notification Overlay Styles */
+.notification-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+    animation: fadeIn 0.3s ease;
+}
+
+.notification-content {
+    font-size: 2rem;
+    font-weight: bold;
+    color: white;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 40px 80px;
+    border-radius: 20px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
+    animation: scaleIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes scaleIn {
+    from { transform: scale(0.8); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
 }
 </style>

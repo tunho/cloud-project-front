@@ -2,8 +2,8 @@
   <div v-if="isVisible" class="modal-overlay">
     <div class="modal-content" :class="{ victory: isVictory, defeat: !isVictory }">
       <div class="result-header">
-        <div class="icon">{{ isVictory ? '🏆' : '🏁' }}</div>
-        <h1>{{ isVictory ? 'VICTORY' : 'FINISHED' }}</h1>
+        <div class="icon">{{ isVictory ? '🏆' : '💀' }}</div>
+        <h1>{{ isVictory ? 'VICTORY' : 'DEFEAT' }}</h1>
         <p class="rank-text">{{ myRank }}위로 마감했습니다</p>
       </div>
 
@@ -95,9 +95,9 @@ const sortedResults = computed(() => {
 
 .result-header { margin-bottom: 1.5rem; }
 .icon { font-size: 4rem; margin-bottom: 0.5rem; animation: bounce 2s infinite; }
-h1 { font-size: 2.5rem; margin: 0; font-weight: 900; letter-spacing: 2px; background: linear-gradient(to bottom, #fff, #aaa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-.victory h1 { background: linear-gradient(to bottom, #ffd700, #ffaa00); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-.defeat h1 { background: linear-gradient(to bottom, #ff6b6b, #c0392b); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+h1 { font-size: 2.5rem; margin: 0; font-weight: 900; letter-spacing: 2px; background: linear-gradient(to bottom, #fff, #aaa); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+.victory h1 { background: linear-gradient(to bottom, #ffd700, #ffaa00); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+.defeat h1 { background: linear-gradient(to bottom, #ff6b6b, #c0392b); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
 .rank-text { font-size: 1.1rem; color: rgba(255, 255, 255, 0.7); margin-top: 0.5rem; }
 
 /* 🔥 Leaderboard Styles */

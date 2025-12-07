@@ -164,10 +164,10 @@
         </div>
     </div>
 
-    <!-- 🏁 Game Over Overlay (Omok Style) -->
+    <!-- 💀 Game Over Overlay (Omok Style) -->
     <div v-if="gameOver" class="game-over-overlay">
         <div class="result-card" :class="{ victory: amIWinner, defeat: !amIWinner }">
-            <div class="result-icon">{{ amIWinner ? '🏆' : '🏁' }}</div>
+            <div class="result-icon">{{ amIWinner ? '🏆' : '💀' }}</div>
             <h2>{{ amIWinner ? 'VICTORY' : 'DEFEAT' }}</h2>
             
             <div class="winner-announce">
@@ -512,7 +512,7 @@ function manualRefresh() {
 }
 
 function leaveGame() {
-    if (confirm("정말 게임을 나가시겠습니까? 패배 처리될 수 있습니다.")) {
+    if (confirm("정말 나가시겠습니까? 게임에서 패배 처리되며 배팅 금액을 잃습니다.")) {
         // 🔥 [FIX] Use surrender action to trigger IndianPokerHandler.leave_game (with chip transfer)
         socket.emit('indian_poker:action', { roomId, action: 'surrender' });
         // Wait for Game Over event
@@ -639,8 +639,10 @@ function animateChips(fromEl: HTMLElement | null, toEl: HTMLElement | null, coun
     }
 }
 
-// --- Socket Events ---
+// --- Lifecycle Hooks ---
 onMounted(() => {
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
     socketId.value = socket.id;
     isConnected.value = socket.connected;
     
@@ -838,7 +840,7 @@ onMounted(() => {
     });
 
     socket.on('game_over', (data) => {
-        console.log("🏁 Game Over Received. Waiting for animations...");
+        console.log("💀 Game Over Received. Waiting for animations...");
         
         let notificationDelay = 0;
         let notificationDuration = 0;
@@ -899,7 +901,7 @@ onMounted(() => {
             return; // 🔥 Exit early, don't run the default logic below
         } else if (data.reason === 'turn_limit') {
             notificationMessage.value = "모든 라운드가 종료되었습니다.";
-            notificationDelay = 3000; // Wait for round result animations (Card Reveal + Pot Win)
+            notificationDelay = 4500; // Wait for round result animations (Card Reveal + Pot Win)
             notificationDuration = 3000; // Show longer
         }
 
@@ -944,6 +946,12 @@ onMounted(() => {
         const chipComparisonStartTime = (message ? (notificationDelay + notificationDuration) : 1500);
 
         setTimeout(() => {
+            // 🔥 [FIX] Update chips from pending state (200:0) before showing comparison
+            if (pendingFinalChips.value) {
+                console.log("💰 Applying pending final chips:", pendingFinalChips.value);
+                chips.value = pendingFinalChips.value;
+            }
+
             console.log("📊 Showing Chip Comparison...");
             // 2. Show Chip Comparison Phase
             isCheckingWinner.value = true;
@@ -963,7 +971,16 @@ onMounted(() => {
 
 });
 
+function handleBeforeUnload(e: BeforeUnloadEvent) {
+    // Only warn if game is in progress (not INIT and not GAME_OVER)
+    if (phase.value !== 'INIT' && phase.value !== 'GAME_OVER') {
+        e.preventDefault();
+        e.returnValue = ''; // Standard for Chrome
+    }
+}
+
 onUnmounted(() => {
+    window.removeEventListener('beforeunload', handleBeforeUnload);
     socket.off('indian_poker:update_state');
     socket.off('indian_poker:round_result');
     socket.off('game_over');
