@@ -661,6 +661,7 @@ onUnmounted(() => {
   outline: none;
   transition: all 0.3s ease;
   text-align: left;
+  box-sizing: border-box; /* 🔥 [FIX] Prevent overflow */
 }
 
 .input-wrapper input[type="number"]:focus {
