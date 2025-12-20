@@ -118,7 +118,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, defineProps } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { socket, gameEntryGuard } from "../socket";
 import UserProfile from "../components/UserProfile.vue";
@@ -479,6 +479,7 @@ onUnmounted(() => {
   padding: 2px;
   background: linear-gradient(45deg, #ffd700, #ff6b6b, #4ecdc4, #ffd700);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
   opacity: 0;  /* 🔥 Changed from 0.6 to 0 to hide the rotating border */
@@ -490,10 +491,11 @@ onUnmounted(() => {
 } */  /* 🔥 Commented out - no longer needed */
 
 .betting-match-premium .btn-content {
-  justify-content: space-between;
+  justify-content: flex-start;
 }
 
 .betting-match-premium .btn-arrow {
+  margin-left: auto;
   font-size: 1.5rem;
   font-weight: bold;
   transition: transform 0.3s ease;
@@ -688,6 +690,7 @@ onUnmounted(() => {
   border-radius: 10px;
   outline: none;
   -webkit-appearance: none;
+  appearance: none;
 }
 
 .range-slider input[type="range"]::-webkit-slider-thumb {

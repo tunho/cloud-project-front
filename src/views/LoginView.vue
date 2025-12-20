@@ -40,11 +40,11 @@ async function googleLogin() {
     const user = result.user;
 
     // 🔥 jbnu 이메일 체크
-    // if (!user.email?.endsWith('@jbnu.ac.kr')) {
-    //   await signOut(auth);
-    //   alert('전북대학교 메일(@jbnu.ac.kr)로만 로그인할 수 있습니다.');
-    //   return;
-    // }
+    if (!user.email?.endsWith('@jbnu.ac.kr')) {
+      await signOut(auth);
+      alert('전북대학교 메일(@jbnu.ac.kr)로만 로그인할 수 있습니다.');
+      return;
+    }
 
     // 🔍 DB에서 기존 프로필 존재 여부 체크
     const refDoc = doc(db, "users", user.uid);

@@ -33,6 +33,7 @@ import { ref, onMounted, onUnmounted, computed } from "vue";
 import { useRoute, useRouter, onBeforeRouteLeave } from "vue-router";
 import { socket, gameEntryGuard } from "../socket";
 import { auth, db } from "../firebase";
+import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { getGameConfig } from "../config/games";
 
@@ -111,8 +112,9 @@ onMounted(() => {
 
   socket.off("queue_status");
   socket.on("queue_status", (data) => {
-    const currentGameType = (route.query.game as string) || 'davinci';
-    if (data.gameType === currentGameType) {
+    console.log("📡 Received queue_status:", data);
+    const currentGameType = ((route.query.game as string) || 'davinci').toLowerCase();
+    if (data.gameType.toLowerCase() === currentGameType) {
         queueCount.value = data.count;
         queueMax.value = data.max;
     }
@@ -127,22 +129,29 @@ onMounted(() => {
 
   console.log("🔥 MatchingView mounted. GameType:", gameType, "Bet:", betAmount);
 
-  const user = auth.currentUser;
-  if (user) {
-    loadUserProfile(user.uid).then(() => {
-      console.log("🚀 Emitting join_queue for", gameType);
-      socket.emit("join_queue", {
-        uid: user.uid,
-        name: user.displayName || "Guest",
-        nickname: nickname.value,
-        betAmount: betAmount,
-        major: major.value,
-        year: year.value,
-        money: money.value,
-        gameType: gameType
+  // 🔥 [FIX] Use onAuthStateChanged to handle page refresh/direct access
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      console.log("✅ Auth initialized:", user.uid);
+      loadUserProfile(user.uid).then(() => {
+        console.log("🚀 Emitting join_queue for", gameType);
+        socket.emit("join_queue", {
+          uid: user.uid,
+          name: user.displayName || "Guest",
+          nickname: nickname.value,
+          betAmount: betAmount,
+          major: major.value,
+          year: year.value,
+          money: money.value,
+          gameType: gameType
+        });
       });
-    });
-  }
+    } else {
+      console.warn("⚠️ No user found in MatchingView");
+      // Optional: Redirect to login if needed
+      // router.push("/"); 
+    }
+  });
 
   socket.off("match:success");
   socket.on("match:success", ({ roomId, players }) => {

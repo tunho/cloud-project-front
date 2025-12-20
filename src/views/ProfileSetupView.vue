@@ -144,6 +144,7 @@ input {
   color: #fff;
   font-size: 1rem;
   transition: border-color 0.2s;
+  box-sizing: border-box;
 }
 
 select:focus,
